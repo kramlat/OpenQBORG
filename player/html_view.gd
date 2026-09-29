@@ -2,18 +2,23 @@
 # Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 class_name HtmlView
 extends PanelContainer
-## HTML pane for world pages, rendered by godot-cef (Chromium) when the
-## addon is installed. Without it, pages fall back to the system browser.
+## HTML view for world pages and ordinary web pages, rendered by godot-cef
+## (Chromium) when the addon is installed. Without it, pages fall back to the
+## system browser.
 
 ## A page asked the player to do something: type is "borg" (raw borg:// URL,
 ## `base` is the page it came from), "world", "web", "moveTile", "tileValue"
 ## or "dialog" (alert/confirm/prompt text).
 signal page_request(msg: Dictionary)
+## The page (or a redirect, or a link the user followed) moved to `url`.
+signal address_changed(url: String)
+signal title_changed(title: String)
 
 const BRIDGE_SCRIPT := "res://web/borg_bridge.js"
 
 var current_url := ""
 var borg_location := ""
+var title := ""
 var _cef: Control
 var _audio: AudioStreamPlayer
 var _fallback_label: Label
@@ -39,6 +44,9 @@ func _ready() -> void:
 		_cef.connect("url_changed", _on_url_changed)
 		_cef.connect("popup_requested", _on_popup_requested)
 		_cef.connect("load_finished", _on_load_finished)
+		_cef.connect("load_started", _on_load_started)
+		_cef.connect("download_requested", _on_download_requested)
+		_cef.connect("title_changed", func(t: String): title = t; title_changed.emit(t))
 		_audio = attach_audio(_cef, self)
 	else:
 		var box := VBoxContainer.new()
@@ -46,7 +54,7 @@ func _ready() -> void:
 		_fallback_label = Label.new()
 		_fallback_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_fallback_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_fallback_label.text = "Install godot-cef to show world pages here\n(tools/fetch-godot-cef.sh)."
+		_fallback_label.text = "Install godot-cef to show pages here\n(tools/fetch-assets.sh cef)."
 		_fallback_button = Button.new()
 		_fallback_button.text = "Open page in browser"
 		_fallback_button.disabled = true
@@ -73,6 +81,37 @@ func clear() -> void:
 	navigate("about:blank" if _cef != null else "")
 
 
+# --- Browser navigation -------------------------------------------------------
+
+func can_go_back() -> bool:
+	return _cef != null and _cef.call("can_go_back")
+
+
+func can_go_forward() -> bool:
+	return _cef != null and _cef.call("can_go_forward")
+
+
+func go_back() -> void:
+	if can_go_back():
+		_cef.call("go_back")
+
+
+func go_forward() -> void:
+	if can_go_forward():
+		_cef.call("go_forward")
+
+
+func reload() -> void:
+	if _cef != null:
+		_cef.call("reload")
+
+
+## A .borg address is a world, not a page: hand it to the player instead of
+## letting Chromium show the XML.
+static func is_world_url(url: String) -> bool:
+	return url.get_slice("?", 0).get_slice("#", 0).to_lower().ends_with(".borg")
+
+
 func _on_ipc_message(message: String) -> void:
 	var msg = JSON.parse_string(message)
 	if msg is Dictionary and msg.has("type"):
@@ -90,17 +129,39 @@ func _on_load_error(url: String, _code: int, _text: String) -> void:
 		page_request.emit({"type": "borg", "url": url, "base": current_url})
 
 
+func _on_load_started(url: String) -> void:
+	print_verbose("HtmlView load_started: ", url)
+	if is_world_url(url) and not url.to_lower().begins_with("borg"):
+		_cef.call("stop_loading")
+		page_request.emit({"type": "world", "url": url})
+
+
 func _on_url_changed(url: String) -> void:
+	print_verbose("HtmlView url_changed: ", url)
 	if url.to_lower().begins_with("borg"):
 		_cef.call("stop_loading")
 		page_request.emit({"type": "borg", "url": url, "base": current_url})
+	elif is_world_url(url):
+		_cef.call("stop_loading")
+		page_request.emit({"type": "world", "url": url})
 	else:
 		current_url = url
+		address_changed.emit(url)
+
+
+## Servers usually send .borg files as a download (octet-stream); those are
+## worlds. Other downloads are ignored: the player doesn't save files.
+func _on_download_requested(info: Object) -> void:
+	var url := str(info.get("url"))
+	if is_world_url(url) or str(info.get("suggested_file_name")).to_lower().ends_with(".borg"):
+		page_request.emit({"type": "world", "url": url})
 
 
 func _on_popup_requested(url: String, _disposition: int, _user_gesture: bool) -> void:
 	if url.to_lower().begins_with("borg"):
 		page_request.emit({"type": "borg", "url": url, "base": current_url})
+	elif is_world_url(url):
+		page_request.emit({"type": "world", "url": url})
 	else:
 		navigate(url)
 

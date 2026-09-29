@@ -16,6 +16,11 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
 ## Features
 
 **Player**
+* **A built-in web browser** (Chromium): type any web address, or a bare
+  `example.com`, and it opens in place of the 3D view with back, forward and
+  reload. Links to `borg://` or `.borg` addresses on any site lead back into
+  3D, even when the server sends the `.borg` as a download. Only a world's own
+  pages may change it through `window.external`.
 * A menu bar with **File** (open a .borg file, open an address, reload, back),
   **Bookmarks** (seeded with the example worlds) and **Help**. The window
   resizes freely, and the side pane is on a draggable splitter.

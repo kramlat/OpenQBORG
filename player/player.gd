@@ -37,12 +37,14 @@ var _backdrop: ColorRect
 var _emblem: TextureRect
 var _nav: NavMap
 var _side_page: HtmlView
-var _full_page: HtmlView
-var _full_page_box: VBoxContainer
+var _browser: BrowserView
+var _forward: Button
 var _last_tile := Vector2i(-1, -1)
 var _music_file := ""
 var _loading := false
 var _world_dirty := false
+var _shot_started := false
+var _loading_url := ""
 
 
 func _ready() -> void:
@@ -62,7 +64,12 @@ func _ready() -> void:
 
 
 func _startup_url() -> String:
-	for arg in OS.get_cmdline_user_args() + OS.get_cmdline_args():
+	# After "--" anything goes: a world, a file, a web address.
+	for arg in OS.get_cmdline_user_args():
+		if not arg.begins_with("-"):
+			return arg
+	# Exported builds get their arguments directly (file associations, %u).
+	for arg in OS.get_cmdline_args():
 		var lower := arg.to_lower()
 		if lower.begins_with("borg") or lower.begins_with("http") or lower.begins_with("file://") \
 				or lower.ends_with(".borg"):
@@ -84,18 +91,24 @@ func _build_ui() -> void:
 	root.add_child(bar)
 	_back = Button.new()
 	_back.text = "◀"
-	_back.tooltip_text = "Previous world"
+	_back.tooltip_text = "Back"
 	_back.disabled = true
-	_back.pressed.connect(go_back)
+	_back.pressed.connect(_on_back)
 	bar.add_child(_back)
+	_forward = Button.new()
+	_forward.text = "▶"
+	_forward.tooltip_text = "Forward (web pages)"
+	_forward.disabled = true
+	_forward.pressed.connect(func(): _browser.go_forward())
+	bar.add_child(_forward)
 	var reload := Button.new()
 	reload.text = "⟳"
 	reload.tooltip_text = "Reload"
-	reload.pressed.connect(func(): if not current_url.is_empty(): _load_world(current_url, false))
+	reload.pressed.connect(_on_reload)
 	bar.add_child(reload)
 	_address = LineEdit.new()
 	_address.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_address.placeholder_text = "borg://host/world/level.borg"
+	_address.placeholder_text = "borg://host/world/level.borg, a .borg file, or any web address"
 	_address.text_submitted.connect(func(t): open_url(t))
 	bar.add_child(_address)
 	var go := Button.new()
@@ -121,19 +134,15 @@ func _build_ui() -> void:
 	_view_container.add_child(_viewport)
 	_setup_scene()
 
-	# Full-view pages (gtw doorways, pushTo2D) replace the 3D view.
-	_full_page_box = VBoxContainer.new()
-	_full_page_box.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_full_page_box.visible = false
-	left.add_child(_full_page_box)
-	var back_to_3d := Button.new()
-	back_to_3d.text = "◀ Back to 3D"
-	back_to_3d.pressed.connect(_close_full_page)
-	_full_page_box.add_child(back_to_3d)
-	_full_page = HtmlView.new()
-	_full_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_full_page.page_request.connect(_on_page_request)
-	_full_page_box.add_child(_full_page)
+	# The built-in browser (web pages, gtw doorway pages, pushTo2D) takes the
+	# 3D view's place while it is showing.
+	_browser = preload("res://browser.tscn").instantiate()
+	_browser.visible = false
+	left.add_child(_browser)
+	_browser.page_request.connect(_on_page_request)
+	_browser.close_requested.connect(_close_full_page)
+	_browser.address_changed.connect(_on_browser_address)
+	_browser.title_changed.connect(_on_browser_title)
 
 	var side := VBoxContainer.new()
 	side.custom_minimum_size.x = SIDE_WIDTH
@@ -180,6 +189,15 @@ func _setup_scene() -> void:
 
 ## Handles anything typed, passed on the command line or requested by a page.
 func open_url(input: String, context := "") -> void:
+	input = input.strip_edges()
+	var lower := input.to_lower()
+	var explicit_world := lower.begins_with("borg://") or lower.begins_with("borgs://")
+	# A bare "example.com/page" is a web address (over TLS); a bare
+	# "host/world.borg" stays a world.
+	if not input.contains("://") and not input.begins_with("/") and not input.begins_with("~") \
+			and not input.begins_with(".") and not HtmlView.is_world_url(input) and input.contains("."):
+		_show_full_page("https://" + input)
+		return
 	var c := BorgUrl.classify(input, context if not context.is_empty() else current_url)
 	c.url = pages.to_local(c.url)
 	match c.kind:
@@ -188,8 +206,10 @@ func open_url(input: String, context := "") -> void:
 		BorgUrl.Kind.COMMAND_WEB:
 			_show_full_page(c.url)
 		BorgUrl.Kind.WORLD:
-			var lower: String = c.url.to_lower()
-			if lower.ends_with(".html") or lower.ends_with(".htm"):
+			# borg:// addresses, local paths and *.borg are worlds; any other
+			# http(s) address is a web page for the built-in browser.
+			var web: bool = not explicit_world and not BorgUrl.is_local(c.url) and not HtmlView.is_world_url(c.url)
+			if web:
 				_show_full_page(c.url)
 			else:
 				_load_world(c.url, true)
@@ -205,6 +225,7 @@ func go_back() -> void:
 func _load_world(url: String, push_history: bool) -> void:
 	if _loading:
 		return
+	_loading_url = url
 	_loading = true
 	_status.text = "Loading " + BorgUrl.to_display(url) + " …"
 	_address.text = BorgUrl.to_display(url)
@@ -222,7 +243,7 @@ func _load_world(url: String, push_history: bool) -> void:
 	await next.build(level, url, fetcher)
 	if push_history and not current_url.is_empty() and current_url != url:
 		history.append(current_url)
-	_back.disabled = history.is_empty()
+	_update_nav_buttons()
 	if world != null:
 		world.queue_free()
 	world = next
@@ -230,7 +251,8 @@ func _load_world(url: String, push_history: bool) -> void:
 	_viewport.add_child(world)
 	current_url = url
 	_side_page.borg_location = url
-	_full_page.borg_location = url
+	_browser.html.borg_location = url
+	_browser.set_world_available(true)
 	_apply_level_look()
 	walker.walk_speed = maxf(1.0, level.speed() / 150.0 * 4.0)
 	walker.place(level.start_tile_position(), level.start_eye_height_px() * BorgWorld.PX, level.start_yaw())
@@ -283,14 +305,24 @@ func _resolve_default_page() -> String:
 
 
 func _show_full_page(url: String) -> void:
-	_full_page.navigate(pages.to_served(url))
-	_full_page_box.visible = true
+	_browser.open(pages.to_served(url))
+	_browser.visible = true
 	_view_container.visible = false
+	_address.text = url
+	_update_nav_buttons()
+	if world == null:
+		_maybe_screenshot()
 
 
 func _close_full_page() -> void:
-	_full_page_box.visible = false
+	if world == null:
+		return # nothing to go back to: stay in the browser
+	_browser.visible = false
 	_view_container.visible = true
+	_address.text = BorgUrl.to_display(current_url)
+	var title: String = world.level.meta.get("Title", "")
+	DisplayServer.window_set_title("%s — OpenQBORG" % title if not title.is_empty() else "OpenQBORG")
+	_update_nav_buttons()
 
 
 func _follow_gtw(index: int) -> void:
@@ -315,15 +347,23 @@ func _show_gtw2(index: int) -> void:
 
 
 func _on_page_request(msg: Dictionary) -> void:
+	print_verbose("page request: ", msg)
 	match msg.type:
 		"borg":
 			open_url(str(msg.url), str(msg.get("base", "")))
 		"world":
-			_load_world(pages.to_local(BorgUrl.to_fetchable(str(msg.url), current_url)), true)
+			var target := pages.to_local(BorgUrl.to_fetchable(str(msg.url), current_url))
+			# Pages can announce the same world twice (link + download).
+			if _loading and target == _loading_url:
+				return
+			if target == current_url and world != null:
+				_close_full_page()
+				return
+			_load_world(target, true)
 		"web":
 			_show_full_page(str(msg.url))
 		"moveTile":
-			if world != null:
+			if world != null and _trusted_page(str(msg.get("origin", ""))):
 				world.move_tile(str(msg.layer), Vector2i(int(msg.fromX), int(msg.fromY)),
 						Vector2i(int(msg.toX), int(msg.toY)), bool(msg.keepOriginal))
 				var layer: String = BorgWorld.SCRIPT_LAYERS.get(str(msg.layer).to_upper(), str(msg.layer))
@@ -338,6 +378,8 @@ func _on_page_request(msg: Dictionary) -> void:
 # --- Per-frame triggers ------------------------------------------------------
 
 func _process(_delta: float) -> void:
+	if _browser.visible:
+		_update_nav_buttons()
 	if world == null or _loading:
 		return
 	if _world_dirty:
@@ -414,8 +456,16 @@ func _maybe_screenshot() -> void:
 	var out := OS.get_environment("OPENQBORG_SCREENSHOT")
 	if out.is_empty():
 		return
+	if _shot_started:
+		return
+	_shot_started = true
 	for i in 240:
 		await get_tree().process_frame
+	if world == null:
+		print("screenshot: browser=%s title=%s address=%s" % [_browser.url(), _browser.page_title(), _address.text])
+		get_viewport().get_texture().get_image().save_png(out)
+		get_tree().quit()
+		return
 	print("screenshot: walker=%s yaw=%.3f tile=%s" % [walker.position, walker.yaw, _last_tile])
 	print("screenshot: status=%s music=%s page=%s" % [_status.text, music.current, _side_page.current_url])
 	var sfx := world.find_children("*", "AudioStreamPlayer3D", true, false).map(func(p): return "%s:%s" % [p.stream.get_class(), p.playing])
@@ -546,14 +596,17 @@ func _on_menu(id: int) -> void:
 			_address.grab_focus()
 			_address.select_all()
 		MenuId.RELOAD:
-			if not current_url.is_empty():
-				_load_world(current_url, false)
+			_on_reload()
 		MenuId.BACK:
-			go_back()
+			_on_back()
 		MenuId.QUIT:
 			get_tree().quit()
 		MenuId.ADD_BOOKMARK:
-			if world != null:
+			if _browser.visible and not _browser.url().is_empty():
+				var page := pages.to_local(_browser.url())
+				bookmarks.add(_browser.page_title(), page)
+				_status.text = "Bookmarked " + page
+			elif world != null:
 				bookmarks.add(world.level.meta.get("Title", ""), current_url)
 				_status.text = "Bookmarked " + BorgUrl.to_display(current_url)
 		MenuId.REMOVE_BOOKMARK:
@@ -593,3 +646,58 @@ func _shortcut_input(event: InputEvent) -> void:
 	if id >= 0:
 		_on_menu(id)
 		get_viewport().set_input_as_handled()
+
+
+# --- Built-in browser --------------------------------------------------------------
+
+## Back steps through web history first, then leaves the browser, then goes
+## to the previous world.
+func _on_back() -> void:
+	if _browser.visible and _browser.can_go_back():
+		_browser.go_back()
+	elif _browser.visible and world != null:
+		_close_full_page()
+	else:
+		go_back()
+
+
+func _on_reload() -> void:
+	if _browser.visible:
+		_browser.reload()
+	elif not current_url.is_empty():
+		_load_world(current_url, false)
+
+
+func _update_nav_buttons() -> void:
+	var in_browser := _browser.visible
+	_back.disabled = not (history.size() > 0 or (in_browser and (_browser.can_go_back() or world != null)))
+	_forward.disabled = not (in_browser and _browser.can_go_forward())
+
+
+func _on_browser_address(url: String) -> void:
+	if _browser.visible and not _address.has_focus():
+		_address.text = pages.to_local(url)
+	_update_nav_buttons()
+
+
+func _on_browser_title(title: String) -> void:
+	if _browser.visible:
+		DisplayServer.window_set_title("%s — OpenQBORG" % title if not title.is_empty() else "OpenQBORG")
+
+
+## Only the current world's own pages may change the world through
+## window.external: pages served for it locally, or from its own site.
+func _trusted_page(origin: String) -> bool:
+	if world == null or origin.is_empty():
+		return false
+	if pages.is_running() and origin.begins_with(pages.origin() + "/"):
+		return true
+	return _site_of(origin) == _site_of(world.base_url)
+
+
+static func _site_of(url: String) -> String:
+	var i := url.find("://")
+	if i < 0:
+		return ""
+	var end := url.find("/", i + 3)
+	return (url if end < 0 else url.left(end)).to_lower()

@@ -8,6 +8,8 @@
 (function () {
   "use strict";
   function send(msg) {
+    // The player only lets the world's own pages change the world.
+    msg.origin = location.href;
     if (typeof window.sendIpcMessage === "function") {
       window.sendIpcMessage(JSON.stringify(msg));
     }
@@ -17,6 +19,10 @@
   function isBorg(url) {
     return typeof url === "string" && /^borgs?:/i.test(url.trim());
   }
+  // A link to a .borg file is a world, whatever server it is on.
+  function isWorldFile(url) {
+    return typeof url === "string" && /\.borg($|[?#])/i.test(url.trim()) && !isBorg(url);
+  }
 
   document.addEventListener("click", function (e) {
     var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
@@ -24,6 +30,10 @@
       e.preventDefault();
       e.stopPropagation();
       send({ type: "borg", url: a.getAttribute("href"), base: location.href });
+    } else if (a && isWorldFile(a.href)) {
+      e.preventDefault();
+      e.stopPropagation();
+      send({ type: "world", url: a.href });
     }
   }, true);
 
@@ -34,6 +44,9 @@
       if (isBorg(e.destination.url)) {
         e.preventDefault();
         send({ type: "borg", url: e.destination.url, base: location.href });
+      } else if (isWorldFile(e.destination.url) && e.cancelable) {
+        e.preventDefault();
+        send({ type: "world", url: e.destination.url });
       }
     });
   }
