@@ -61,6 +61,18 @@ var _wall_frames: BorgFrames
 var _surface_anims: Array = []
 ## Animated wall materials: [{mat, textures, frames}] (kept with the cache).
 var _wall_anims: Array = []
+var _sound_players: Array[AudioStreamPlayer3D] = []
+## Sound tiles play only while this is on (the editor mutes them while
+## orbiting; the player leaves it on).
+var sounds_enabled := true:
+	set(value):
+		sounds_enabled = value
+		for p in _sound_players:
+			if is_instance_valid(p):
+				if value and not p.playing:
+					p.play()
+				elif not value:
+					p.stop()
 var _content: Node3D
 
 
@@ -483,6 +495,7 @@ func _register_animation(s: Sprite3D, sprite: CWSprite) -> void:
 
 
 func _build_sounds() -> void:
+	_sound_players.clear()
 	for y in level.height:
 		for x in level.width:
 			var v := level.get_cell("wav", x, y)
@@ -492,8 +505,9 @@ func _build_sounds() -> void:
 			p.stream = sounds[v - 1]
 			p.position = Vector3(x + 0.5, 0.25, y + 0.5)
 			p.max_distance = 1.5
-			p.autoplay = true
+			p.autoplay = sounds_enabled
 			_content.add_child(p)
+			_sound_players.append(p)
 
 
 func _process(delta: float) -> void:

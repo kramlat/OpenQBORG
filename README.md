@@ -60,6 +60,10 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
 * **Picture palettes**: the Floor, Ceiling, wall-texture and Objects layers show
   the world's own tiles, strips and sprites as a grid of previews (names on
   hover), and the Resources list previews sprites too.
+* **Audio testing**: ▶ Test (or double-click) on the Sounds and Music palettes
+  and ▶ Play in Resources play what a tile would. The Walk preview plays music
+  regions and positional sound tiles as the player does, and a "Hear sounds"
+  toggle lets sound tiles play while you edit.
 * Colour overlays for the invisible layers (no-walk, links, sounds, music,
   script triggers), undo/redo, and world properties.
 * Resource lists (sprites, links, sounds, music, scripts, nav map, emblem),

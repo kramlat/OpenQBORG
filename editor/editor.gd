@@ -33,6 +33,12 @@ var fetcher := BorgFetcher.new()
 var music := BorgMusic.new()
 var undo := UndoRedo.new()
 var library := StarterLibrary.new()
+## Test playback: one sound or music track at a time.
+var _sfx := AudioStreamPlayer.new()
+var _testing := ""
+var _test_button: Button
+var _hear_sounds := false
+var _walk_music := ""
 
 var _unsaved := false
 var _geometry_dirty := false
@@ -73,6 +79,7 @@ func _ready() -> void:
 	add_child(music)
 	music.status_changed.connect(func(t): _status.text = t)
 	library.load_library()
+	add_child(_sfx)
 	_build_ui()
 	var start := ""
 	for arg in OS.get_cmdline_user_args():
@@ -101,6 +108,11 @@ func _build_ui() -> void:
 		b.text = spec[0]
 		b.pressed.connect(spec[1])
 		bar.add_child(b)
+	var hear := CheckButton.new()
+	hear.text = "Hear sounds"
+	hear.tooltip_text = "Play the world's sound tiles while editing (they always play in Walk)"
+	hear.toggled.connect(func(on: bool): _hear_sounds = on; _apply_sound_state())
+	bar.add_child(hear)
 
 	var split := HSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -154,10 +166,16 @@ func _build_left_dock() -> Control:
 	_value_spin.max_value = 255
 	_value_spin.value_changed.connect(_sync_palette_selection)
 	dock.add_child(_value_spin)
+	_test_button = Button.new()
+	_test_button.text = "▶ Test"
+	_test_button.tooltip_text = "Play the selected sound or music (double-click an entry works too)"
+	_test_button.pressed.connect(func(): _test_value(int(_value_spin.value)))
+	dock.add_child(_test_button)
 	_value_list = ItemList.new()
 	_value_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_value_list.fixed_icon_size = Vector2i(32, 32)
 	_value_list.item_selected.connect(func(i): _value_spin.value = _value_list.get_item_metadata(i))
+	_value_list.item_activated.connect(func(i): if _current_layer() in ["wav", "mid"]: _test_value(_value_list.get_item_metadata(i)))
 	dock.add_child(_value_list)
 	return dock
 
@@ -438,6 +456,8 @@ func _reload_world() -> void:
 	_refresh_values()
 	_refresh_resources()
 	_building = false
+	_stop_test()
+	_apply_sound_state()
 	if path.is_empty():
 		_status.text = "New world. Add things from the Library tab; what you use is copied next to the world when you save."
 
@@ -646,6 +666,8 @@ func _refresh_values() -> void:
 				add.call("%d  %s" % [i + 1, files[i]], i + 1, _swatch(TileOverlay.value_color(i + 1)))
 	_value_spin.value = _empty_value(layer) if layer != "wal" and layer != "hgt" else (1 if layer == "wal" else 64)
 	_sync_palette_selection(_value_spin.value)
+	_test_button.visible = layer in ["wav", "mid"]
+	_update_test_button()
 
 
 const PALETTE_ICON := 56
@@ -837,6 +859,15 @@ func _show_tile_status(tile: Vector2i) -> void:
 
 
 func _process(_delta: float) -> void:
+	# Walk preview: music regions switch as in the player.
+	if _walker != null and world != null:
+		var t := Vector2i(floori(_walker.position.x), floori(_walker.position.z))
+		var mid := level.get_cell("mid", t.x, t.y)
+		var mids := level.ext_files("mid")
+		var file: String = mids[mid - 1] if mid > 0 and mid <= mids.size() else ""
+		if file != _walk_music:
+			_walk_music = file
+			music.play_url(world.media_url(file) if not file.is_empty() else "", fetcher)
 	if _geometry_dirty and world != null and not _building:
 		_geometry_dirty = false
 		world.rebuild()
@@ -871,6 +902,9 @@ func _toggle_walk() -> void:
 	if _walker != null:
 		_walker.queue_free()
 		_walker = null
+		_walk_music = ""
+		music.play_url("", fetcher)
+		_apply_sound_state()
 		_camera.make_current()
 		_overlay.visible = true
 		_status.text = "Editing"
@@ -880,10 +914,12 @@ func _toggle_walk() -> void:
 	_walker.walk_speed = maxf(1.0, level.speed() / 150.0 * 4.0)
 	_walker.place(level.start_tile_position(), level.start_eye_height_px() * BorgWorld.PX, level.start_yaw())
 	_walker.camera.make_current()
+	_stop_test()
 	if world != null:
 		world.viewer = _walker.camera
 	_overlay.visible = false
 	_view_container.grab_focus()
+	_apply_sound_state()
 	_status.text = "Walking — arrows/WASD, PgUp/PgDn to look, Esc to stop"
 
 
@@ -906,7 +942,7 @@ func _refresh_resources() -> void:
 			if img != null:
 				icon = _palette_thumb(img)
 		_res_list.add_item(files[i], icon)
-	_res_play.visible = _res_tag() == "mid"
+	_res_play.visible = _res_tag() in ["mid", "wav"]
 	_res_script.visible = _res_tag() == "js"
 
 
@@ -968,16 +1004,24 @@ func _res_move(delta: int) -> void:
 
 
 func _res_toggle_music() -> void:
-	if not music.current.is_empty():
-		music.play_url("", fetcher)
-		_res_play.text = "▶ Play"
-		return
 	var sel := _res_list.get_selected_items()
-	if sel.is_empty() or path.is_empty():
+	var tag := _res_tag()
+	if not _testing.is_empty() or sel.is_empty() or world == null:
+		_stop_test()
 		return
-	var url := BorgUrl.join("file://" + path.get_base_dir() + "/", "media/" + _res_list.get_item_text(sel[0]))
-	music.play_url(url, fetcher)
+	# Same playback as the palette's Test, for this list entry.
+	var key := "%s:%d" % [tag, sel[0] + 1]
+	if tag == "wav":
+		if sel[0] >= world.sounds.size() or world.sounds[sel[0]] == null:
+			_status.text = "That sound couldn't be loaded (%s)." % BorgAudio.last_error
+			return
+		_sfx.stream = world.sounds[sel[0]]
+		_sfx.play()
+	else:
+		music.play_url(world.media_url(_res_list.get_item_text(sel[0])), fetcher)
+	_testing = key
 	_res_play.text = "■ Stop"
+	_update_test_button()
 
 
 func _res_edit_script() -> void:
@@ -1019,11 +1063,18 @@ func _maybe_screenshot() -> void:
 				_layer_list.select(i)
 		_refresh_values()
 		_refresh_overlay()
+	if not OS.get_environment("OPENQBORG_TEST").is_empty():
+		_test_value(int(OS.get_environment("OPENQBORG_TEST")))
+	if not OS.get_environment("OPENQBORG_WALK").is_empty():
+		_toggle_walk()
 	var tab := OS.get_environment("OPENQBORG_TAB")
 	if not tab.is_empty():
 		_center_tabs.current_tab = int(tab)
 	for i in 60:
 		await get_tree().process_frame
+	print("screenshot: testing=%s sfx_playing=%s sfx=%s music=%s sounds_enabled=%s walk_music=%s button=%s" % [
+			_testing, _sfx.playing, _sfx.stream, music.current.get_file(), world.sounds_enabled if world else null,
+			_walk_music, _test_button.text if _test_button.visible else "(hidden)"])
 	get_viewport().get_texture().get_image().save_png(out)
 	get_tree().quit()
 
@@ -1252,3 +1303,52 @@ func _lib_preview() -> void:
 	var m: Dictionary = _lib_list.get_item_metadata(sel[0])
 	music.play_url("file://" + library.path("media", m.file), fetcher)
 	_lib_play.text = "■ Stop"
+
+
+# --- Audio testing ------------------------------------------------------------------
+
+## Sound tiles play while walking, or while "Hear sounds" is on.
+func _apply_sound_state() -> void:
+	if world != null:
+		world.sounds_enabled = _hear_sounds or _walker != null
+
+
+## Plays (or, if it's already playing, stops) sound or music `value` of the
+## current layer: what a tile painted with that value would play.
+func _test_value(value: int) -> void:
+	var layer := _current_layer()
+	var key := "%s:%d" % [layer, value]
+	if _testing == key or value <= 0 or world == null:
+		_stop_test()
+		return
+	_stop_test()
+	if layer == "wav":
+		if value > world.sounds.size() or world.sounds[value - 1] == null:
+			_status.text = "Sound %d couldn't be loaded (%s)." % [value, BorgAudio.last_error]
+			return
+		_sfx.stream = world.sounds[value - 1]
+		_sfx.play()
+	elif layer == "mid":
+		var mids := level.ext_files("mid")
+		if value > mids.size():
+			return
+		music.play_url(world.media_url(mids[value - 1]), fetcher)
+	else:
+		return
+	_testing = key
+	_update_test_button()
+
+
+func _stop_test() -> void:
+	_sfx.stop()
+	if _testing.begins_with("mid:"):
+		music.play_url("", fetcher)
+	_testing = ""
+	if _res_play != null:
+		_res_play.text = "▶ Play"
+	_update_test_button()
+
+
+func _update_test_button() -> void:
+	if _test_button != null:
+		_test_button.text = "■ Stop" if not _testing.is_empty() else "▶ Test"
