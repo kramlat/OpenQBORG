@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<brg VER="3.0" BS="000000">
+	<rdf:RDF xmlns:rdf="http://w3.org/TR/1999/PR-rdf-syntax-19990105#"
+	         xmlns:dc="http://purl.org/metadata/dublin_core#">
+	<rdf:Description>
+		<dc:Title> Hello QBORG </dc:Title>
+		<dc:Description> OpenQBORG example: classic courtyard </dc:Description>
+		<dc:Date> 2026-09-29 </dc:Date>
+		<dc:Type> QBORG </dc:Type>
+		<dc:Rights> OpenQBORG examples, GPL-3.0-or-later </dc:Rights>
+	</rdf:Description>
+	</rdf:RDF>
+
+<gen TP="fffffffe" SP="96" HT="40" APP="3" MFG="cb">
+	<pos> 220 60 14 c00 </pos>
+</gen>
+<map RL="10">
+	<wal> 1101 e00 201 e00 201 100 101 a00 101 100 201 e00 201 200 301 900 201 200 301 500 101 300 201 e00 201 700 101 600 201 e00 201 200 102 600 101 100 102 200 201 200 102 800 102 200 201 200 402 300 302 200 301 c00 501 a00 1301 </wal>
+	<hgt> 1140 e00 240 e00 240 e00 240 e00 240 e00 240 e00 240 e00 240 e00 240 e00 240 200 118 800 118 200 240 200 118 800 118 200 240 200 418 300 318 200 240 e00 240 e00 1140 </hgt>
+	<flr> 1101 700 101 600 201 700 101 600 201 400 202 100 101 600 201 400 202 100 101 600 201 400 202 100 101 600 201 700 101 600 201 700 101 600 1201 700 101 600 201 700 101 600 201 700 101 600 201 700 101 600 201 700 101 600 201 700 101 600 1101 </flr>
+	<cei> 100ff </cei>
+	<obj> 3200 101 a00 101 1d00 102 f00 105 1500 104 600 103 500 104 1600 102 400 105 2600 101 c00 101 200 201 a00 201 500 106 600 106 400 </obj>
+	<gtw> 8100 101 c00 102 7100 </gtw>
+	<gtw2> 5a00 302 d00 302 d00 302 1c00 301 d00 301 d00 301 4400 </gtw2>
+	<ent> 10000 </ent>
+	<wav> 8800 101 7700 </wav>
+	<mid> 10001 </mid>
+	<lnk> 10000 </lnk>
+	<lnk2> 10000 </lnk2>
+</map>
+<ext>
+<flr>
+	<cfil HREF="examples.flr">0 10000 20000 30000 40000 50000 60000 </cfil>
+</flr>
+<wal>
+	<cfil HREF="examples.wal">0 40000 80000 c0000 </cfil>
+</wal>
+<nav>
+	<file HREF="hello.nav"/>
+</nav>
+<emb>
+	<file HREF="hello.emb"/>
+</emb>
+<bdp BC="c98f2a" POS="14">
+<file HREF="examples.bck"/>
+</bdp>
+<spr>
+	<file HREF="tree.sprite"/>
+	<file HREF="torch.sprite"/>
+	<file HREF="fountain.sprite"/>
+	<file HREF="portal.sprite"/>
+	<file HREF="sign.sprite"/>
+	<file HREF="banner.sprite"/>
+</spr>
+<gtw>
+	<file HREF="sprawl"/>
+	<file HREF="puzzle"/>
+</gtw>
+<gtw2>
+	<file HREF="info.url"/>
+	<file HREF="move.url"/>
+</gtw2>
+<gtw3>
+	<file HREF="welcome.url"/>
+</gtw3>
+<wav>
+	<file HREF="fountain.wav"/>
+</wav>
+<mid>
+	<file HREF="theme.mid"/>
+</mid>
+</ext>
+</brg>

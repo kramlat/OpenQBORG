@@ -194,3 +194,62 @@ func _parse_ctrl(text: String) -> void:
 	on_south = props.get("CW_SOUTHWALL", false)
 	on_west = props.get("CW_WESTWALL", false)
 	on_east = props.get("CW_EASTWALL", false)
+
+
+# --- Writing -----------------------------------------------------------------
+
+static var _crc_table := PackedInt64Array()
+
+
+## Encodes `image` (frames stacked vertically) as a CYBERWORLD .sprite: a PNG
+## with a "cxBX" chunk holding CWS2 metadata from this object's fields. Keep
+## the image opaque with a key colour in the top-left pixel, as the original
+## tools expect.
+func to_png_bytes() -> PackedByteArray:
+	var png := image.save_png_to_buffer()
+	var meta := PackedByteArray()
+	meta.append_array("CWS2".to_ascii_buffer())
+	var vis := (8 if on_north else 0) | (4 if on_south else 0) | (2 if on_west else 0) | (1 if on_east else 0)
+	var flags := (4 if multi_sided else 0) | (0 if menu_item else 2)
+	for v in [cell_count, cell_width, cell_height, world_z, world_y, world_x, flags,
+			1 if animate_on_load else 0, sides, world_width, world_height, repeat_count,
+			frame_count, default_duration, vis, 0]:
+		_put_u32_le(meta, v)
+	for f in frame_count:
+		_put_u32_le(meta, frame_durations[f] if f < frame_durations.size() else default_duration)
+	# Insert right after IHDR (8-byte signature + 25-byte IHDR chunk).
+	var out := png.slice(0, 33)
+	out.append_array(_png_chunk("cxBX", meta))
+	out.append_array(png.slice(33))
+	return out
+
+
+static func _put_u32_le(buf: PackedByteArray, v: int) -> void:
+	for i in 4:
+		buf.append((v >> (8 * i)) & 0xff)
+
+
+static func _png_chunk(type: String, data: PackedByteArray) -> PackedByteArray:
+	var out := PackedByteArray()
+	var n := data.size()
+	out.append_array(PackedByteArray([(n >> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff]))
+	var body := type.to_ascii_buffer()
+	body.append_array(data)
+	out.append_array(body)
+	var crc := _crc32(body)
+	out.append_array(PackedByteArray([(crc >> 24) & 0xff, (crc >> 16) & 0xff, (crc >> 8) & 0xff, crc & 0xff]))
+	return out
+
+
+static func _crc32(data: PackedByteArray) -> int:
+	if _crc_table.is_empty():
+		_crc_table.resize(256)
+		for i in 256:
+			var c := i
+			for k in 8:
+				c = (0xedb88320 ^ (c >> 1)) if c & 1 else (c >> 1)
+			_crc_table[i] = c
+	var crc := 0xffffffff
+	for b in data:
+		crc = _crc_table[(crc ^ b) & 0xff] ^ (crc >> 8)
+	return crc ^ 0xffffffff

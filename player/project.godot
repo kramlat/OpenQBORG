@@ -1,13 +1,23 @@
 ; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
 
 config_version=5
+
+[animation]
+
+compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 [application]
 
 config/name="OpenQBORG Player"
 config/description="Open source player for CYBERWORLD QBORG worlds (borg:// and borgs://)"
 run/main_scene="res://main.tscn"
-config/features=PackedStringArray("4.5", "Forward Plus")
+config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
 
 [display]
@@ -15,6 +25,10 @@ config/icon="res://icon.svg"
 window/size/viewport_width=1024
 window/size/viewport_height=640
 window/stretch/aspect="expand"
+
+[godot_cef]
+
+audio/enable_audio_capture=true
 
 [input]
 
@@ -64,7 +78,3 @@ borg_look_down={
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
-
-[godot_cef]
-
-audio/enable_audio_capture=true

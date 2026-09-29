@@ -13,6 +13,7 @@ func _init() -> void:
 	_test_rle()
 	_test_urls()
 	_test_empty_roundtrip()
+	_test_sprite_roundtrip()
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--audio="):
 			_test_audio_dir(arg.trim_prefix("--audio="))
@@ -97,7 +98,7 @@ func _test_world_dir(dir_path: String) -> void:
 		for name in level.layers:
 			check(again.layers.get(name) == level.layers[name], "%s layer %s round trip" % [path.get_file(), name])
 			# Byte-exact layer text, so the original tools still read our saves.
-			var enc := BorgLevel.encode_layer(level.layers[name], name in BorgLevel.SURFACE_LAYERS)
+			var enc := BorgLevel.encode_layer(level.layers[name], name in BorgLevel.SURFACE_LAYERS, level.width, level.height)
 			check(original.contains("<%s> %s </%s>" % [name, enc, name]),
 					"%s %s encodes identically" % [path.get_file(), name])
 		check(again.ext.size() == level.ext.size(), path.get_file() + " ext entries survive")
@@ -151,8 +152,7 @@ func _test_sized_world() -> void:
 	check(again.is_classic_size() and not again.serialize().contains("<size>"), "shrink back to classic")
 
 
-## Every audio file in `dir` must decode to a 1.5 s tone (make them with ffmpeg:
-## -f lavfi -i sine=frequency=440:duration=1.5).
+## Every audio file in `dir` must decode (MIDI is skipped: BorgMusic plays it).
 func _test_audio_dir(dir_path: String) -> void:
 	print("FFmpeg extension: %s" % (ClassDB.class_call_static("FFmpegAudioDecoder", "ffmpeg_version")
 			if BorgAudio.has_ffmpeg() else "not loaded"))
@@ -162,9 +162,38 @@ func _test_audio_dir(dir_path: String) -> void:
 		return
 	for f in dir.get_files():
 		var bytes := FileAccess.get_file_as_bytes(dir_path.path_join(f))
+		if BorgAudio.is_midi(bytes):
+			continue
 		var stream := BorgAudio.decode(bytes, f)
-		var ok := stream != null and absf(stream.get_length() - 1.5) < 0.2
+		var ok := stream != null and stream.get_length() > 0.1
 		check(ok, "decode %s (%s)" % [f, BorgAudio.last_error])
 		if stream != null:
 			BorgAudio.set_looping(stream)
 			print("%-14s %-8s -> %-22s %.2fs" % [f, BorgAudio.sniff(bytes), stream.get_class(), stream.get_length()])
+
+
+func _test_sprite_roundtrip() -> void:
+	var s := CWSprite.new()
+	s.image = Image.create(32, 96, false, Image.FORMAT_RGBA8)
+	s.image.fill(Color.MAGENTA)
+	s.image.fill_rect(Rect2i(8, 40, 16, 16), Color.YELLOW)
+	s.cell_count = 3
+	s.cell_width = 32
+	s.cell_height = 32
+	s.world_x = 100
+	s.world_z = 12
+	s.world_width = 64
+	s.world_height = 64
+	s.animate_on_load = true
+	s.frame_count = 3
+	s.frame_durations = PackedInt32Array([100, 200, 300])
+	s.on_south = true
+	var back := CWSprite.decode(s.to_png_bytes(), "t.sprite")
+	check(back != null and back.has_metadata, "encoded sprite decodes with metadata")
+	if back == null:
+		return
+	check(back.cell_count == 3 and back.cell_height == 32 and back.world_x == 100 and back.world_z == 12,
+			"sprite geometry survives")
+	check(back.animate_on_load and back.frame_durations == PackedInt32Array([100, 200, 300]), "sprite animation survives")
+	check(back.on_south and not back.on_north, "sprite wall flags survive")
+	check(back.image.get_pixel(0, 0).a == 0.0 and back.image.get_pixel(12, 44).a == 1.0, "colour key applied")

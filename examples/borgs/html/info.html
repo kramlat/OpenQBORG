@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How this courtyard is built</title>
+<link rel="stylesheet" href="style.css">
+<script src="qborg.js"></script>
+</head>
+<body>
+<h1>How this courtyard is built</h1>
+<p>A QBORG world is a grid of tiles with several layers:</p>
+<ul>
+<li><b>Floors</b> come from one image of stacked 256&times;256 tiles.</li>
+<li><b>Walls</b> are blocks with a height; brick and hedge use different strips.</li>
+<li><b>Objects</b> are sprites: the trees, animated torches, the fountain, and the
+blue banners painted onto the north wall.</li>
+<li><b>Links</b>: the portals are doorways (<code>gtw</code>); standing near a sign shows a
+page here (<code>gtw2</code>).</li>
+<li><b>Sound</b>: the fountain is a looping WAV sound tile, and the whole courtyard is a
+MIDI music region.</li>
+</ul>
+<p class="note">Open examples/borgs/hello.borg in the OpenQBORG Editor to see every layer.</p>
+</body>
+</html>

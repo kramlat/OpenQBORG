@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hello, QBORG</title>
+<link rel="stylesheet" href="style.css">
+<script src="qborg.js"></script>
+</head>
+<body>
+<h1>Hello, QBORG</h1>
+<p>Welcome to the OpenQBORG example courtyard: a <em>classic</em>
+16&times;16 world that the original CYBERWORLD tools could open.</p>
+<canvas id="sky" width="300" height="110"></canvas>
+<h2>Getting around</h2>
+<p><kbd>&uarr;</kbd><kbd>&darr;</kbd> or <kbd>W</kbd><kbd>S</kbd> walk, <kbd>&larr;</kbd><kbd>&rarr;</kbd> turn,
+<kbd>A</kbd><kbd>D</kbd> strafe, <kbd>PgUp</kbd><kbd>PgDn</kbd> look. Click a tile to use it.</p>
+<p>Walk up to the signposts to read more. The swirling portals lead to the
+other examples, or jump straight there:</p>
+<button onclick="pushTo3D('../sprawl.borg')">The Sprawl (128&times;128)</button>
+<button onclick="pushTo3D('../puzzle.borg')">The Orb Vault (scripted)</button>
+<p class="note">This page is plain HTML5 &mdash; the starfield above is a &lt;canvas&gt; animation.</p>
+<script>
+var c = document.getElementById("sky"), g = c.getContext("2d"), stars = [];
+for (var i = 0; i < 90; i++) stars.push([Math.random() * 300, Math.random() * 110, Math.random() * 1.5 + 0.3]);
+(function frame(t) {
+  g.fillStyle = "#05070d"; g.fillRect(0, 0, 300, 110);
+  stars.forEach(function (s) {
+    s[0] = (s[0] + s[2] * 0.4) % 300;
+    g.fillStyle = "rgba(200,225,255," + (0.4 + 0.6 * Math.abs(Math.sin(t / 700 + s[1]))) + ")";
+    g.fillRect(s[0], s[1], s[2], s[2]);
+  });
+  requestAnimationFrame(frame);
+})(0);
+</script>
+</body>
+</html>

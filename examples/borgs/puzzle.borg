@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+<brg VER="3.0" BS="000000">
+	<rdf:RDF xmlns:rdf="http://w3.org/TR/1999/PR-rdf-syntax-19990105#"
+	         xmlns:dc="http://purl.org/metadata/dublin_core#">
+	<rdf:Description>
+		<dc:Title> The Orb Vault </dc:Title>
+		<dc:Description> OpenQBORG example: JavaScript world scripting </dc:Description>
+		<dc:Date> 2026-09-29 </dc:Date>
+		<dc:Type> QBORG </dc:Type>
+		<dc:Rights> OpenQBORG examples, GPL-3.0-or-later </dc:Rights>
+	</rdf:Description>
+	</rdf:RDF>
+
+<gen TP="fffffffe" SP="96" HT="40" APP="3" MFG="cb">
+	<pos> 220 120 14 c00 </pos>
+</gen>
+<map RL="10">
+	<wal> 1103 e00 203 e00 803 204 803 e00 203 e00 203 e00 203 e00 203 e00 403 100 d03 600 203 600 203 600 203 600 203 600 203 600 203 600 203 600 203 600 203 600 1103 </wal>
+	<hgt> 1140 e00 240 e00 1240 e00 240 e00 240 e00 240 e00 240 e00 440 100 d40 600 240 600 240 600 240 600 240 600 240 600 240 600 240 600 240 600 240 600 1140 </hgt>
+	<flr> 3c03 105 3503 105 1303 104 4503 105 3303 </flr>
+	<cei> 10003 </cei>
+	<obj> 2700 103 4b00 101 d00 102 c00 102 1200 102 c00 102 2c00 101 500 101 1e00 </obj>
+	<gtw> 2700 101 d800 </gtw>
+	<gtw2> 10000 </gtw2>
+	<ent> 10000 </ent>
+	<wav> 6800 101 9700 </wav>
+	<mid> 10001 </mid>
+	<lnk> 10000 </lnk>
+	<lnk2> 10000 </lnk2>
+	<js> 6800 102 a00 101 4f00 103 800 104 e00 101 500 101 1e00 </js>
+</map>
+<ext>
+<flr>
+	<cfil HREF="examples.flr">0 10000 20000 30000 40000 50000 60000 </cfil>
+</flr>
+<cei>
+	<cfil HREF="examples.flr">0 10000 20000 30000 40000 50000 60000 </cfil>
+</cei>
+<wal>
+	<cfil HREF="examples.wal">0 40000 80000 c0000 </cfil>
+</wal>
+<nav>
+	<file HREF="puzzle.nav"/>
+</nav>
+<emb>
+	<file HREF="puzzle.emb"/>
+</emb>
+<bdp BC="180c0c" POS="0"/>
+<spr>
+	<file HREF="orb.sprite"/>
+	<file HREF="torch.sprite"/>
+	<file HREF="portal.sprite"/>
+</spr>
+<gtw>
+	<file HREF="hello"/>
+</gtw>
+<gtw3>
+	<file HREF="puzzle.url"/>
+</gtw3>
+<wav>
+	<file HREF="hum.opus"/>
+</wav>
+<mid>
+	<file HREF="ambient.ogg"/>
+</mid>
+<js>
+	<file HREF="puzzle.js"/>
+</js>
+</ext>
+</brg>

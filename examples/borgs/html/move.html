@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pages can change the world</title>
+<link rel="stylesheet" href="style.css">
+<script src="qborg.js"></script>
+</head>
+<body>
+<h1>Pages can change the world</h1>
+<p>World pages can talk back to the 3D view through
+<code>window.external</code>, just like in 2000. Try it:</p>
+<button onclick="window.external.MoveTile('SPRITE', 12, 11, 13, 11, false)">Move the torch east</button>
+<button onclick="window.external.MoveTile('SPRITE', 13, 11, 12, 11, false)">Move it back</button>
+<p class="note">Host version: <span id="ver"></span></p>
+<script>
+document.getElementById("ver").textContent =
+  (window.external && window.external.GetVer) ? window.external.GetVer() : "(not in a QBORG player)";
+</script>
+</body>
+</html>
