@@ -1,0 +1,13 @@
+# Godot (per project)
+.godot/
+export_presets.cfg
+/build/
+
+# godot-cef runtime (~560 MB of CEF binaries, player only): tools/fetch-assets.sh cef
+/player/addons/godot_cef/
+
+# Local test worlds
+/worlds/
+
+# SoundFonts (GeneralUser GS ~30 MB): install with tools/fetch-assets.sh soundfont
+/soundfonts/*.sf2

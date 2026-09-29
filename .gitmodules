@@ -1,0 +1,3 @@
+[submodule "third_party/godot-midi-player-g4"]
+	path = third_party/godot-midi-player-g4
+	url = https://github.com/arlez80/godot-midi-player-g4

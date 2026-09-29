@@ -1,0 +1,72 @@
+// Injected by OpenQBORG into every page shown in the player (godot-cef
+// preload script). CYBERWORLD pages talked to the 3D view two ways:
+//   1. navigating to borg:// URLs (pushTo3D / pushTo2D / borg://cmd.prev)
+//   2. calling methods on window.external (the old IE host object)
+// Chromium doesn't know borg://, so both are forwarded over godot-cef IPC.
+(function () {
+  "use strict";
+  function send(msg) {
+    if (typeof window.sendIpcMessage === "function") {
+      window.sendIpcMessage(JSON.stringify(msg));
+    }
+  }
+
+  // --- borg:// links -------------------------------------------------------
+  function isBorg(url) {
+    return typeof url === "string" && /^borgs?:/i.test(url.trim());
+  }
+
+  document.addEventListener("click", function (e) {
+    var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+    if (a && isBorg(a.getAttribute("href"))) {
+      e.preventDefault();
+      e.stopPropagation();
+      send({ type: "borg", url: a.getAttribute("href"), base: location.href });
+    }
+  }, true);
+
+  // Location assignments to borg:// can't be trapped directly; the Navigation
+  // API sees them in current Chromium. Godot also watches load errors.
+  if (window.navigation && window.navigation.addEventListener) {
+    window.navigation.addEventListener("navigate", function (e) {
+      if (isBorg(e.destination.url)) {
+        e.preventDefault();
+        send({ type: "borg", url: e.destination.url, base: location.href });
+      }
+    });
+  }
+
+  // The stock CYBERWORLD helpers (html/scripts/player.js) build borg:// URLs
+  // from location.href. Resolve against the page instead and skip the detour.
+  function wrapHelpers() {
+    window.pushTo3D = function (borg) {
+      send({ type: "world", url: new URL(borg, location.href).href });
+    };
+    window.pushTo2D = function (html) {
+      send({ type: "web", url: new URL(html, location.href).href });
+    };
+  }
+  document.addEventListener("DOMContentLoaded", wrapHelpers);
+  window.addEventListener("load", wrapHelpers);
+
+  // --- window.external -----------------------------------------------------
+  var host = {
+    GetVer: function () { return "5.3"; },
+    MoveTile: function (layer, fromX, fromY, toX, toY, keepOriginal) {
+      send({ type: "moveTile", layer: String(layer), fromX: fromX, fromY: fromY,
+             toX: toX, toY: toY, keepOriginal: !!keepOriginal });
+    },
+    tileValue: function (layer, x, y, option, value) {
+      send({ type: "tileValue", layer: String(layer), x: x, y: y, option: option,
+             value: value === undefined ? null : value });
+    }
+  };
+  host.moveTile = host.MoveTile;
+  host.getVer = host.GetVer;
+  try {
+    Object.defineProperty(window, "external", { value: host, configurable: true });
+  } catch (err) {
+    for (var k in host) { try { window.external[k] = host[k]; } catch (e2) {} }
+  }
+  // BorgLocation is filled in by the player after each page load.
+})();
