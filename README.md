@@ -90,9 +90,16 @@ tools/install-desktop.sh          # optional: open borg:// links and .borg files
 
 ```sh
 tools/build-release.sh            # exports both apps to build/linux/ (with the examples)
-tools/install-desktop.sh --built  # .borg files (with their own icon) and borg:// links
-                                  # open in the built player
+tools/install-system.sh           # installs it to /opt/openqborg (asks for your password)
+tools/install-system.sh --uninstall
 ```
+
+The system install puts launchers in `/usr/local/bin` and desktop entries, the
+`.borg` MIME type and icons under `/usr/local/share`, and makes the player
+your default for `.borg` files and `borg://` / `borgs://` links. Its desktop
+entries run `/opt/openqborg/openqborg-player` and `-editor` directly and use
+the `player.svg` / `editor.svg` shipped in the package. To register the build
+for just your user instead, without root, run `tools/install-desktop.sh`.
 
 `build-release.sh` uses `godot-mono` when it's installed (else `godot`; override
 with `GODOT=...`). Both editors work, since OpenQBORG has no C#. It needs the
