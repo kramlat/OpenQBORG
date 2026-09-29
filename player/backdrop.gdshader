@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 // QBORG backdrop (<bdp>): a panorama strip behind the world that scrolls one
 // image width per 90 degrees of turning, pinned to the horizon. Rows above and
 // below the image repeat its top and bottom edge colours.

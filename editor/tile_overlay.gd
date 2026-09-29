@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 class_name TileOverlay
 extends Node3D
 ## Grid lines, a hover cursor, the start marker and a colour-coded MultiMesh

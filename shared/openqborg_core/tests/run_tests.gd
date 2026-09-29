@@ -1,6 +1,8 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 extends SceneTree
 ## Headless checks for the shared core. From the repo root:
-##   godot --headless --path player --script res://addons/openqborg_core/tests/run_tests.gd -- [world_dir]
+##   godot --headless --path player --script res://addons/openqborg_core/tests/run_tests.gd -- [world_dir] [--audio=dir]
 ## Without a world dir only the synthetic tests run. With one, every .borg is
 ## parsed and round-tripped and every .sprite is decoded.
 
@@ -11,9 +13,11 @@ func _init() -> void:
 	_test_rle()
 	_test_urls()
 	_test_empty_roundtrip()
-	var args := OS.get_cmdline_user_args()
-	if args.size() > 0:
-		_test_world_dir(args[0])
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--audio="):
+			_test_audio_dir(arg.trim_prefix("--audio="))
+		else:
+			_test_world_dir(arg)
 	print("FAILED: %d" % failures if failures else "ALL PASSED")
 	quit(1 if failures else 0)
 
@@ -145,3 +149,22 @@ func _test_sized_world() -> void:
 	check(big.width == 256 and big.height == 16, "size clamps to 16..256")
 	again.resize(16, 16)
 	check(again.is_classic_size() and not again.serialize().contains("<size>"), "shrink back to classic")
+
+
+## Every audio file in `dir` must decode to a 1.5 s tone (make them with ffmpeg:
+## -f lavfi -i sine=frequency=440:duration=1.5).
+func _test_audio_dir(dir_path: String) -> void:
+	print("FFmpeg extension: %s" % (ClassDB.class_call_static("FFmpegAudioDecoder", "ffmpeg_version")
+			if BorgAudio.has_ffmpeg() else "not loaded"))
+	var dir := DirAccess.open(dir_path)
+	check(dir != null, "audio dir " + dir_path)
+	if dir == null:
+		return
+	for f in dir.get_files():
+		var bytes := FileAccess.get_file_as_bytes(dir_path.path_join(f))
+		var stream := BorgAudio.decode(bytes, f)
+		var ok := stream != null and absf(stream.get_length() - 1.5) < 0.2
+		check(ok, "decode %s (%s)" % [f, BorgAudio.last_error])
+		if stream != null:
+			BorgAudio.set_looping(stream)
+			print("%-14s %-8s -> %-22s %.2fs" % [f, BorgAudio.sniff(bytes), stream.get_class(), stream.get_length()])

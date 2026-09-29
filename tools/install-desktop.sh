@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Registers OpenQBORG with the desktop for the current user: borg:// and
 # borgs:// links and .borg files open in the player, .borg files can be
 # opened with the editor.

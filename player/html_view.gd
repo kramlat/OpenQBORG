@@ -1,10 +1,13 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 class_name HtmlView
 extends PanelContainer
 ## HTML pane for world pages, rendered by godot-cef (Chromium) when the
 ## addon is installed. Without it, pages fall back to the system browser.
 
-## A page asked the player to do something: kind is "borg" (raw borg:// URL,
-## `base` is the page it came from), "world", "web", "moveTile" or "tileValue".
+## A page asked the player to do something: type is "borg" (raw borg:// URL,
+## `base` is the page it came from), "world", "web", "moveTile", "tileValue"
+## or "dialog" (alert/confirm/prompt text).
 signal page_request(msg: Dictionary)
 
 const BRIDGE_SCRIPT := "res://web/borg_bridge.js"
@@ -12,6 +15,7 @@ const BRIDGE_SCRIPT := "res://web/borg_bridge.js"
 var current_url := ""
 var borg_location := ""
 var _cef: Control
+var _audio: AudioStreamPlayer
 var _fallback_label: Label
 var _fallback_button: Button
 
@@ -35,6 +39,7 @@ func _ready() -> void:
 		_cef.connect("url_changed", _on_url_changed)
 		_cef.connect("popup_requested", _on_popup_requested)
 		_cef.connect("load_finished", _on_load_finished)
+		_audio = attach_audio(_cef, self)
 	else:
 		var box := VBoxContainer.new()
 		box.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -98,3 +103,31 @@ func _on_popup_requested(url: String, _disposition: int, _user_gesture: bool) ->
 		page_request.emit({"type": "borg", "url": url, "base": current_url})
 	else:
 		navigate(url)
+
+
+## Routes a CefTexture's sound (HTML5 <audio>/<video>, WebAudio) through
+## Godot's mixer instead of straight to the OS, when godot_cef/audio/
+## enable_audio_capture is on. Call push_audio() every frame.
+static func attach_audio(cef: Control, parent: Node) -> AudioStreamPlayer:
+	if not cef.call("is_audio_capture_enabled"):
+		return null
+	var p := AudioStreamPlayer.new()
+	p.stream = cef.call("create_audio_stream")
+	parent.add_child(p)
+	p.play()
+	return p
+
+
+static func push_audio(cef: Control, player: AudioStreamPlayer) -> void:
+	if cef == null or player == null or not player.playing:
+		return
+	var playback := player.get_stream_playback()
+	if playback != null:
+		cef.call("push_audio_to_playback", playback)
+
+
+func _process(_delta: float) -> void:
+	push_audio(_cef, _audio)
+	# A page covered by the 3D view (or hidden) shouldn't keep making noise.
+	if _audio != null:
+		_audio.volume_db = 0.0 if is_visible_in_tree() else -80.0

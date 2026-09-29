@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 extends Control
 ## OpenQBORG Editor: an open source take on CYBERWORLD's QBORG authoring tool.
 ##

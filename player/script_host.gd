@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 class_name ScriptHost
 extends Control
 ## OpenQBORG extension: runs a world's JavaScript (<ext><js>) in a hidden
@@ -11,6 +13,7 @@ signal request(msg: Dictionary)
 const HOST_PAGE := "res://web/script_host.html"
 
 var _cef: Control
+var _audio: AudioStreamPlayer
 var _ready_page := false
 var _queue: Array[Dictionary] = []
 var _generation := 0
@@ -41,6 +44,7 @@ func start(world: BorgWorld, player_state: Dictionary) -> void:
 	_cef.set("url", HOST_PAGE + "?g=%d" % _generation)
 	add_child(_cef)
 	_cef.connect("ipc_message", _on_ipc_message)
+	_audio = HtmlView.attach_audio(_cef, self)
 	var layers := {}
 	for name in world.level.layers:
 		layers[name] = Array(world.level.layers[name])
@@ -53,6 +57,9 @@ func stop() -> void:
 	if _cef != null:
 		_cef.queue_free()
 		_cef = null
+	if _audio != null:
+		_audio.queue_free()
+		_audio = null
 	_ready_page = false
 	_queue.clear()
 
@@ -91,3 +98,7 @@ func _on_ipc_message(message: String) -> void:
 		_queue.clear()
 	else:
 		request.emit(msg)
+
+
+func _process(_delta: float) -> void:
+	HtmlView.push_audio(_cef, _audio)

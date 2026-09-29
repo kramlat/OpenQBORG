@@ -1,7 +1,11 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 class_name BorgMusic
 extends Node
-## Background music for `mid` regions: Standard MIDI Files played through a
-## General MIDI SoundFont with godot-midi-player (third_party/, MIT).
+## Background music for `mid` regions. Standard MIDI Files play through a
+## General MIDI SoundFont with godot-midi-player (third_party/, MIT); any
+## other audio file (OGG, Opus, MP3, AAC, FLAC...) is decoded by BorgAudio
+## and looped. Modern formats in music regions are an OpenQBORG extension.
 ##
 ## The original CYBERWORLD browser went through Windows' GS wavetable synth,
 ## so a GS-compatible bank (GeneralUser GS, tools/fetch-assets.sh soundfont)
@@ -17,6 +21,7 @@ const PREFERRED := ["GeneralUser-GS.sf2", "GeneralUser GS.sf2", "FluidR3_GM.sf2"
 var volume_db := -12.0
 var current := ""
 var _player: MidiPlayer
+var _stream_player: AudioStreamPlayer
 var _bank: Bank
 var _thread: Thread
 var _bank_ready := false
@@ -46,6 +51,9 @@ func _ready() -> void:
 	_player.loop = true
 	_player.volume_db = volume_db
 	add_child(_player)
+	_stream_player = AudioStreamPlayer.new()
+	_stream_player.volume_db = volume_db + 6.0
+	add_child(_stream_player)
 	var sf := find_soundfont()
 	if sf.is_empty():
 		status_changed.emit("No SoundFont found: MIDI music is off (tools/fetch-assets.sh soundfont)")
@@ -84,10 +92,20 @@ func play_url(url: String, fetcher: BorgFetcher) -> void:
 	current = url
 	_pending_smf = null
 	_player.stop()
+	_stream_player.stop()
 	if url.is_empty():
 		return
 	var bytes := await fetcher.fetch(url)
 	if url != current or bytes.is_empty():
+		return
+	if not BorgAudio.is_midi(bytes):
+		var stream := BorgAudio.decode(bytes, url.get_file())
+		if stream == null:
+			status_changed.emit(BorgAudio.last_error)
+			return
+		BorgAudio.set_looping(stream)
+		_stream_player.stream = stream
+		_stream_player.play()
 		return
 	var parsed := SMF.new().read_data(bytes)
 	if parsed.error != OK:

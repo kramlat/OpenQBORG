@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 class_name LocalPageServer
 extends Node
 ## Serves the pages of *local* worlds over http://127.0.0.1 so Chromium treats

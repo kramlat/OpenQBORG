@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 class_name BorgWorld
 extends Node3D
 ## Builds and animates the 3D scene for a BorgLevel.
@@ -92,7 +94,12 @@ func build(p_level: BorgLevel, url: String, p_fetcher: BorgFetcher) -> void:
 		var bytes := await fetcher.fetch(objects_url(href))
 		_sprites.append(CWSprite.decode(bytes, href) if not bytes.is_empty() else null)
 	for href in level.ext_files("wav"):
-		sounds.append(_decode_audio(await fetcher.fetch(media_url(href))))
+		var stream := BorgAudio.decode(await fetcher.fetch(media_url(href)), href)
+		if stream == null:
+			push_warning(BorgAudio.last_error)
+		else:
+			BorgAudio.set_looping(stream)
+		sounds.append(stream)
 	for href in level.ext_files("js"):
 		var source := await fetcher.fetch_text(scripts_url(href))
 		if not source.is_empty():
@@ -146,21 +153,6 @@ static func decode_image(bytes: PackedByteArray) -> Image:
 	elif bytes.slice(8, 12).get_string_from_ascii() == "WEBP":
 		err = img.load_webp_from_buffer(bytes)
 	return img if err == OK else null
-
-
-static func _decode_audio(bytes: PackedByteArray) -> AudioStream:
-	if bytes.size() < 12:
-		return null
-	var head := bytes.slice(0, 4).get_string_from_ascii()
-	if head == "RIFF":
-		return AudioStreamWAV.load_from_buffer(bytes)
-	if head == "OggS":
-		return AudioStreamOggVorbis.load_from_buffer(bytes)
-	if head.begins_with("ID3") or (bytes[0] == 0xff and (bytes[1] & 0xe0) == 0xe0):
-		var mp3 := AudioStreamMP3.new()
-		mp3.data = bytes
-		return mp3
-	return null # MIDI is handled by the player
 
 
 static func unshaded_material(tex: Texture2D) -> StandardMaterial3D:
@@ -449,7 +441,6 @@ func _build_sounds() -> void:
 			p.position = Vector3(x + 0.5, 0.25, y + 0.5)
 			p.max_distance = 1.5
 			p.autoplay = true
-			p.finished.connect(p.play)
 			_content.add_child(p)
 
 

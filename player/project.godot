@@ -64,3 +64,7 @@ borg_look_down={
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
+
+[godot_cef]
+
+audio/enable_audio_capture=true

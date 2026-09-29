@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 // Floor/ceiling tiles drawn as one MultiMesh: every tile image of the level
 // is a layer of `tiles`; INSTANCE_CUSTOM.r carries the layer index.
 shader_type spatial;

@@ -1,3 +1,10 @@
 [submodule "third_party/godot-midi-player-g4"]
 	path = third_party/godot-midi-player-g4
 	url = https://github.com/arlez80/godot-midi-player-g4
+[submodule "third_party/godot-cpp"]
+	path = third_party/godot-cpp
+	url = https://github.com/godotengine/godot-cpp
+[submodule "contrib/godot-cef"]
+	path = contrib/godot-cef
+	url = https://github.com/dsh0416/godot-cef
+	branch = main

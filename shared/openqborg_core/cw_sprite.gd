@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 class_name CWSprite
 extends RefCounted
 ## CYBERWORLD sprite (.sprite / .ctrl).

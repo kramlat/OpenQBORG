@@ -66,8 +66,8 @@ stream walks up each column, starting at the left.
 | `obj` | 1-based index into `<spr>` |
 | `gtw` | 1-based index into `<gtw>`: stepping on it follows the link (world or page) |
 | `gtw2` | 1-based index into `<gtw2>`: page shown beside the world while inside the region |
-| `wav` | 1-based index into `<wav>`: looping positional sound |
-| `mid` | 1-based index into `<mid>`: background music region |
+| `wav` | 1-based index into `<wav>`: looping positional sound (OpenQBORG also accepts Ogg, Opus, MP3, AAC, FLAC, ...) |
+| `mid` | 1-based index into `<mid>`: background music region (MIDI; OpenQBORG also accepts any audio format) |
 | `ent`, `lnk`, `lnk2` | Not fully understood; preserved verbatim |
 
 ## Assets (`<ext>`)

@@ -1,0 +1,10 @@
+[configuration]
+entry_symbol = "openqborg_audio_init"
+compatibility_minimum = "4.5"
+reloadable = false
+
+[libraries]
+linux.x86_64 = "bin/libopenqborg_audio.linux.x86_64.so"
+linux.arm64 = "bin/libopenqborg_audio.linux.arm64.so"
+windows.x86_64 = "bin/libopenqborg_audio.windows.x86_64.dll"
+macos = "bin/libopenqborg_audio.macos.arm64.dylib"

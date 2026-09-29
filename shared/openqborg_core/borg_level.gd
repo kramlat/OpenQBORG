@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 class_name BorgLevel
 extends RefCounted
 ## In-memory model of a CYBERWORLD .borg level (XML, VER 3.0).

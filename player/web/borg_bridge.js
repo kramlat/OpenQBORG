@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 // Injected by OpenQBORG into every page shown in the player (godot-cef
 // preload script). CYBERWORLD pages talked to the 3D view two ways:
 //   1. navigating to borg:// URLs (pushTo3D / pushTo2D / borg://cmd.prev)
@@ -48,6 +50,21 @@
   }
   document.addEventListener("DOMContentLoaded", wrapHelpers);
   window.addEventListener("load", wrapHelpers);
+
+  // --- JS dialogs -----------------------------------------------------------
+  // Native JS dialogs crash godot-cef on current Godot builds, and old pages
+  // use them freely. Show them as Godot dialogs instead. They can't block,
+  // so confirm() answers "OK" and prompt() returns its default value.
+  function dialog(kind, message, value) {
+    send({ type: "dialog", kind: kind, text: String(message === undefined ? "" : message) });
+    return value;
+  }
+  window.alert = function (m) { dialog("alert", m, undefined); };
+  window.confirm = function (m) { return dialog("confirm", m, true); };
+  window.prompt = function (m, d) { return dialog("prompt", m, d === undefined ? "" : String(d)); };
+  // "Leave this page?" is a native dialog too.
+  window.addEventListener("beforeunload", function (e) { e.stopImmediatePropagation(); }, true);
+  Object.defineProperty(window, "onbeforeunload", { get: function () { return null; }, set: function () {} });
 
   // --- window.external -----------------------------------------------------
   var host = {

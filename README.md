@@ -25,12 +25,20 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
 * **HTML5 world pages** rendered by Chromium via
   [godot-cef](https://github.com/dsh0416/godot-cef). The original browser
   embedded IE-era HTML; pages now get modern HTML, CSS and JS, plus the
-  classic `pushTo3D()` / `window.external.MoveTile()` bridge. Pages from
+  classic `pushTo3D()` / `window.external.MoveTile()` bridge. JavaScript `alert()`/`confirm()`/
+  `prompt()` appear as Godot dialogs (they can't block, so `confirm()` answers
+  OK and `prompt()` returns its default). Pages from
   local worlds are served over loopback so their cookie-based save games work.
-* **Sound**: looping positional `.wav`/`.ogg`/`.mp3` tiles, and MIDI music
-  regions played through a General MIDI SoundFont
+* **Sound**: looping positional sound tiles and music regions in almost any
+  format: WAV, Ogg Vorbis and MP3 natively, plus Opus (`.opus`/`.oga`), AAC
+  (`.aac`/`.m4a`), FLAC, ALAC, WMA, AIFF, WebM/Matroska audio and ADPCM WAV
+  through the bundled FFmpeg audio extension. MIDI music plays through a
+  General MIDI SoundFont
   ([godot-midi-player](https://github.com/arlez80/godot-midi-player-g4)
   with GeneralUser GS, a GS bank like the one the original relied on in Windows).
+* Page audio (HTML5 `<audio>`, WebAudio) is captured from Chromium into
+  Godot's mixer, so it follows the player's volume and goes quiet when its page
+  is hidden.
 * `borgs://` verifies certificates and never downgrades to plain HTTP,
   including for `borg://` links on pages that were loaded over TLS.
 
@@ -47,6 +55,8 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
 **New, backward-compatible extensions**
 * `<size>`: worlds from 16×16 up to **256×256** tiles. Floors and ceilings
   render as one MultiMesh each, so big worlds stay fast.
+* Modern audio formats in `<wav>` and `<mid>` lists (the original only knew
+  `.wav` and `.mid`).
 * `<js>`: **JavaScript world scripting** with events, tile editing,
   teleports and pages ([docs/SCRIPTING.md](docs/SCRIPTING.md)).
 
@@ -61,7 +71,8 @@ git clone --recursive https://github.com/kramlat/OpenQBORG
 cd OpenQBORG
 tools/fetch-assets.sh soundfont   # GeneralUser GS, ~31 MB (MIDI music)
 tools/fetch-assets.sh cef         # godot-cef runtime for the player, ~560 MB
-                                  # (or: tools/fetch-assets.sh cef /path/to/godot-cef)
+                                  # (or build it from source: tools/fetch-assets.sh cef --source)
+tools/build-audio-ext.sh          # FFmpeg audio extension (AAC, Opus, FLAC, ...)
 
 godot --path player -- borgs://example.org/world/level.borg
 godot --path editor -- path/to/level.borg
@@ -69,7 +80,8 @@ tools/install-desktop.sh          # optional: open borg:// links and .borg files
 ```
 
 The player runs without godot-cef too. In that case, world pages open in
-your web browser and world scripts don't run.
+your web browser and world scripts don't run. Without the audio extension,
+WAV, Ogg Vorbis, MP3 and MIDI still play.
 
 ### Player controls
 
@@ -101,7 +113,12 @@ player/                 Godot project: OpenQBORG Player
 editor/                 Godot project: OpenQBORG Editor
 shared/openqborg_core/  Format, URL, sprite, world-building and music code,
                         linked into both projects as addons/openqborg_core
-third_party/            godot-midi-player-g4 (submodule, MIT), linked as addons/midi
+third_party/            godot-midi-player-g4 (MIT, linked as addons/midi) and
+                        godot-cpp (MIT), as submodules
+contrib/godot-cef/      godot-cef source (MIT, submodule pinned to the release the
+                        player uses): build it with fetch-assets.sh cef --source
+extensions/             openqborg_audio GDExtension source (C++, FFmpeg)
+shared/openqborg_audio/ its .gdextension + built binaries, linked as addons/openqborg_audio
 soundfonts/             SoundFonts (fetched, not committed)
 tools/                  fetch-assets.sh, install-desktop.sh
 dist/linux/             .desktop entries and the .borg MIME type
@@ -141,4 +158,12 @@ is not affiliated with them.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+OpenQBORG is free software under the **GNU General Public License v3.0 or
+later**; see [LICENSE](LICENSE).
+
+Third-party components keep their own licenses: godot-cef, godot-cpp and
+godot-midi-player are MIT, CEF/Chromium is BSD-style, GeneralUser GS has its
+own permissive license, and FFmpeg is LGPL-2.1-or-later. Release builds bundle
+an LGPL-only, audio-only FFmpeg built by `tools/build-ffmpeg-lgpl.sh` and link
+it dynamically. To rebuild the exact godot-cef a release uses, run
+`tools/fetch-assets.sh cef --source`.

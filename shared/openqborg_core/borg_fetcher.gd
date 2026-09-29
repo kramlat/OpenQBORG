@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 class_name BorgFetcher
 extends Node
 ## Fetches world files from disk (file://) or the network (http/https).

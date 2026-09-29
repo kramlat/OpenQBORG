@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 extends Control
 ## OpenQBORG Player: address bar, 3D view and the CYBERWORLD-style side
 ## panel (emblem, nav map, page pane).
@@ -324,6 +326,8 @@ func _on_page_request(msg: Dictionary) -> void:
 					scripts.sync_layer(layer, world.level.layers[layer])
 		"tileValue":
 			pass # TODO: sprite height scaling (option 0/3) once a world needs it
+		"dialog":
+			_show_page_dialog(str(msg.get("text", "")))
 
 
 # --- Per-frame triggers ------------------------------------------------------
@@ -401,6 +405,8 @@ func _maybe_screenshot() -> void:
 		await get_tree().process_frame
 	print("screenshot: walker=%s yaw=%.3f tile=%s" % [walker.position, walker.yaw, _last_tile])
 	print("screenshot: status=%s music=%s page=%s" % [_status.text, music.current, _side_page.current_url])
+	var sfx := world.find_children("*", "AudioStreamPlayer3D", true, false).map(func(p): return "%s:%s" % [p.stream.get_class(), p.playing])
+	print("screenshot: music_stream=%s sfx=%s" % [music.get_child(1).stream, sfx])
 	get_viewport().get_texture().get_image().save_png(out)
 	get_tree().quit()
 
@@ -433,3 +439,17 @@ func _on_script_request(msg: Dictionary) -> void:
 			_status.text = str(msg.text)
 		"log":
 			print("[world script] ", msg.text)
+
+
+## alert()/confirm()/prompt() from world pages, shown by Godot (native JS
+## dialogs crash godot-cef).
+func _show_page_dialog(text: String) -> void:
+	var d := AcceptDialog.new()
+	d.title = world.level.meta.get("Title", "OpenQBORG") if world != null else "OpenQBORG"
+	d.dialog_text = text
+	d.dialog_autowrap = true
+	d.min_size = Vector2i(360, 0)
+	d.confirmed.connect(d.queue_free)
+	d.canceled.connect(d.queue_free)
+	add_child(d)
+	d.popup_centered()
