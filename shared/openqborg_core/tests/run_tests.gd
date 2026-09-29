@@ -14,6 +14,7 @@ func _init() -> void:
 	_test_urls()
 	_test_empty_roundtrip()
 	_test_sprite_roundtrip()
+	_test_sprite_behaviour()
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--audio="):
 			_test_audio_dir(arg.trim_prefix("--audio="))
@@ -109,12 +110,16 @@ func _test_world_dir(dir_path: String) -> void:
 				level.start_tile_position()])
 	var sprites := _find(dir_path, ".sprite")
 	var decoded := 0
+	var cws3 := 0
+	var interactive := 0
 	for path in sprites:
 		var s := CWSprite.decode(FileAccess.get_file_as_bytes(path), path)
 		check(s != null and s.image != null, "decode sprite " + path)
 		if s != null:
 			decoded += 1
-	print("sprites decoded: %d/%d" % [decoded, sprites.size()])
+			cws3 += 1 if s.version >= 3 else 0
+			interactive += 1 if s.is_interactive() else 0
+	print("sprites decoded: %d/%d (CWS3: %d, interactive: %d)" % [decoded, sprites.size(), cws3, interactive])
 
 
 func _find(dir_path: String, ext: String) -> PackedStringArray:
@@ -222,3 +227,51 @@ func _test_frames_dir(dir_path: String) -> void:
 	# Plain JPEGs must not be mistaken for Motion JPEG.
 	check(BorgFrames.sniff(FileAccess.get_file_as_bytes(dir_path.path_join("still.jpg"))) == "image",
 			"single JPEG is not MJPEG")
+
+
+## CWS3 behaviours: a 4-frame sprite with every group used.
+func _test_sprite_behaviour() -> void:
+	var s := CWSprite.new()
+	s.image = Image.create(8, 32, false, Image.FORMAT_RGBA8)
+	s.image.fill(Color.MAGENTA)
+	s.cell_count = 4
+	s.cell_width = 8
+	s.cell_height = 8
+	s.frame_count = 4
+	s.frame_durations = PackedInt32Array([100, 100, 100, 100])
+	s.animate_on_load = false
+	s.proximity_distance = 300
+	s.groups = s.default_groups()
+	s.groups[CWSprite.Group.MOUSE_OVER] = {"enabled": true, "from": 1, "to": 1, "repeat": 0, "end": -1,
+			"revert": CWSprite.REVERT_ON_EXIT}
+	s.groups[CWSprite.Group.CLICK] = {"enabled": true, "from": 0, "to": 2, "repeat": 1, "end": 2, "revert": 0}
+	s.groups[CWSprite.Group.PROXIMITY] = {"enabled": true, "from": 3, "to": 0, "repeat": 2, "end": -1, "revert": 0}
+	var back := CWSprite.decode(s.to_png_bytes(), "b.sprite")
+	check(back != null and back.version == 3, "CWS3 written and read back")
+	if back == null:
+		return
+	check(back.proximity_distance == 300 and back.groups[2].end == 2 and back.groups[3].from == 3,
+			"CWS3 groups survive")
+	check(back.is_interactive(), "sprite with behaviours is interactive")
+
+	var node := Sprite3D.new()
+	node.texture = ImageTexture.create_from_image(back.image)
+	node.vframes = 4
+	var b := SpriteBehaviour.new(node, back, Vector2i(3, 3))
+	check(node.frame == 0, "general: static frame 0 (not animated on load)")
+	b.set_hovered(true)
+	check(b.group == CWSprite.Group.MOUSE_OVER and node.frame == 1, "mouse-over shows frame 1")
+	b.set_hovered(false)
+	check(b.group == CWSprite.Group.GENERAL and node.frame == 0, "leaving reverts (revert on exit)")
+	b.click()
+	b.tick(150)
+	check(node.frame == 1, "click plays forward")
+	b.tick(300)
+	check(b.group == CWSprite.Group.CLICK and node.frame == 2, "click plays once and holds its end frame")
+	b.set_near(true)
+	check(b.group == CWSprite.Group.PROXIMITY and node.frame == 3, "proximity starts at its from frame")
+	b.tick(350)
+	check(node.frame == 0, "proximity plays backwards (from > to)")
+	b.tick(450)
+	check(b.group == CWSprite.Group.GENERAL, "after its repeats, end -1 returns to general")
+	node.free()

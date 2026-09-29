@@ -103,7 +103,31 @@ height, world Z, world Y, world X, flags (bit 2 = multi-sided), animate on
 load, sides, world width, world height, repeat count, frame count, default
 frame duration, wall visibility (N S W E as bits 3..0), unknown, then one
 duration (ms) per frame. `CWS3` appends mouse-over/click/proximity animation
-ranges.
+ranges (see below).
+
+**JPEG sprites are stored upside down** (the tools wrote bottom-up bitmap rows
+into the JPEG); flip them vertically before cutting frames. PNG sprites are
+the right way up. The authoring tool's source sprites are BMPs followed by
+`SP03` and the same fields as a CWS3 block.
+
+### CWS3 behaviours
+
+After the frame durations a CWS3 block continues with the proximity distance
+(world pixels, 64 by default), 0, the group count (4) and the group size (6),
+then four groups of `enabled, from, to, repeat, end, revert`:
+
+| Group | Plays |
+|---|---|
+| general | always (moving only if "animate on load" is set) |
+| mouse-over | while the pointer rests on the sprite |
+| click | when the sprite is clicked (the tile's link is followed too) |
+| proximity | while the viewer is within the proximity distance |
+
+Frames run `from`..`to` (backwards if `from > to`), `repeat` times (0 = loop
+while active), then hold frame `end` (-1 = return to the general group).
+`revert` bit 0 returns to the general group when the trigger ends (the mouse
+leaves, the viewer walks away); bit 1 when the animation stops. This layout
+was confirmed against 156 CWS3 sprites in ten surviving worlds.
 
 A sprite on a tile with a wall block (`hgt` > 0) is painted onto the block's
 faces flagged in the visibility mask instead of standing as a billboard.

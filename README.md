@@ -24,6 +24,8 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
 * A menu bar with **File** (open a .borg file, open an address, reload, back),
   **Bookmarks** (seeded with the example worlds) and **Help**. The window
   resizes freely, and the side pane is on a draggable splitter.
+* CWS3 sprite behaviours: sprites that react to the mouse pointer, to clicks
+  and to the player coming near, as authored in the original worlds.
 * Walls, floors, ceilings, animated and multi-sided sprites, sprites
   painted onto wall faces, the panorama backdrop, and the nav map with a
   "you are here" marker.
@@ -201,7 +203,6 @@ layer must come out byte-identical, and every sprite must decode.
 
 ## Not done yet
 
-* `CWS3` mouse-over, click and proximity sprite animations
 * `window.external.tileValue()` (sprite resizing from pages)
 * Flash (`.swf`) in pages. [Ruffle](https://ruffle.rs) is the likely route.
 * One player window per `borg://` link (there is no single-instance handoff yet)

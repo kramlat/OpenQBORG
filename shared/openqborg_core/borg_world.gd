@@ -62,6 +62,15 @@ var _surface_anims: Array = []
 ## Animated wall materials: [{mat, textures, frames}] (kept with the cache).
 var _wall_anims: Array = []
 var _sound_players: Array[AudioStreamPlayer3D] = []
+## Every placed sprite node: {node, sprite, tile[, behaviour]} (for picking).
+var _sprite_nodes: Array[Dictionary] = []
+## CWS3 sprites: mouse-over / click / proximity behaviour.
+var _behaviours: Array[SpriteBehaviour] = []
+## The pointer ray from the player (set_pointer), and the sprite under it.
+var _pointer_origin := Vector3.ZERO
+var _pointer_dir := Vector3.ZERO
+var _pointer_on := false
+var hovered_sprite: Dictionary = {}
 ## Sound tiles play only while this is on (the editor mutes them while
 ## orbiting; the player leaves it on).
 var sounds_enabled := true:
@@ -142,6 +151,9 @@ func rebuild() -> void:
 		_content.free()
 	_animated.clear()
 	_surface_anims.clear()
+	_sprite_nodes.clear()
+	_behaviours.clear()
+	hovered_sprite = {}
 	_content = Node3D.new()
 	_content.name = "Content"
 	add_child(_content)
@@ -468,7 +480,7 @@ func _build_billboard(sprite: CWSprite, x: int, y: int) -> void:
 	s.scale = Vector3(sx, 1, 1)
 	s.position = Vector3(x + sprite.world_x * PX, sprite.world_z * PX + world_h / 2, y + 1 - sprite.world_y * PX)
 	_content.add_child(s)
-	_register_animation(s, sprite)
+	_register_animation(s, sprite, Vector2i(x, y))
 
 
 ## A sprite on a wall tile is painted onto the block's flagged faces.
@@ -484,10 +496,16 @@ func _build_wall_sprite(sprite: CWSprite, x: int, y: int) -> void:
 		s.position = Vector3(x, (sprite.world_z + sprite.cell_height / 2.0) * PX, y) + face[0]
 		s.rotation.y = face[1]
 		_content.add_child(s)
-		_register_animation(s, sprite)
+		_register_animation(s, sprite, Vector2i(x, y))
 
 
-func _register_animation(s: Sprite3D, sprite: CWSprite) -> void:
+func _register_animation(s: Sprite3D, sprite: CWSprite, tile: Vector2i) -> void:
+	_sprite_nodes.append({"node": s, "sprite": sprite, "tile": tile})
+	if sprite.version >= 3 and not (sprite.multi_sided and sprite.sides > 1):
+		var b := SpriteBehaviour.new(s, sprite, tile)
+		_behaviours.append(b)
+		_sprite_nodes.back()["behaviour"] = b
+		return
 	if sprite.animate_on_load and sprite.frame_count > 1:
 		_animated.append({"node": s, "sprite": sprite, "time": 0.0, "frame": 0})
 	elif sprite.multi_sided and sprite.sides > 1:
@@ -520,6 +538,7 @@ func _process(delta: float) -> void:
 		var tex: Texture2D = w.textures[w.frames.frame_at(anim_ms)]
 		if w.mat.albedo_texture != tex:
 			w.mat.albedo_texture = tex
+	_update_behaviours(delta)
 	for a in _animated:
 		var sprite: CWSprite = a.sprite
 		var s: Sprite3D = a.node
@@ -602,3 +621,79 @@ func sprite_image(index: int) -> Image:
 		return null
 	var s: CWSprite = _sprites[index]
 	return s.image.get_region(Rect2i(0, 0, s.image.get_width(), mini(s.image.get_height(), s.cell_height)))
+
+
+# --- Sprite picking and CWS3 behaviours ---------------------------------------------
+
+## Where the mouse points in 3D (camera ray); `active` false when the mouse
+## is outside the view. Drives mouse-over behaviours and hovered_sprite.
+func set_pointer(origin: Vector3, dir: Vector3, active: bool) -> void:
+	_pointer_origin = origin
+	_pointer_dir = dir
+	_pointer_on = active
+
+
+## Clicks along a camera ray. Plays the clicked sprite's click behaviour and
+## returns its tile (the tile's link should follow, as in the original), or
+## (-1, -1) when no sprite was hit.
+func click(origin: Vector3, dir: Vector3) -> Vector2i:
+	var hit := pick_sprite(origin, dir)
+	if hit.is_empty():
+		return Vector2i(-1, -1)
+	if hit.has("behaviour"):
+		(hit.behaviour as SpriteBehaviour).click()
+	return hit.tile
+
+
+## The nearest sprite hit by a ray: {node, sprite, tile[, behaviour]} or {}.
+func pick_sprite(origin: Vector3, dir: Vector3) -> Dictionary:
+	var best := {}
+	var best_t := INF
+	for e in _sprite_nodes:
+		var t := _ray_hits_sprite(origin, dir, e.node)
+		if t < best_t:
+			best_t = t
+			best = e
+	return best
+
+
+## Distance along the ray to a sprite, or INF. Billboards are treated as
+## upright cylinders (they always face the camera); wall sprites as their plane.
+static func _ray_hits_sprite(origin: Vector3, dir: Vector3, s: Sprite3D) -> float:
+	var region := s.get_item_rect()
+	var half := region.size * s.pixel_size * Vector2(s.scale.x, s.scale.y) * 0.5
+	var c := s.global_position
+	if s.billboard == BaseMaterial3D.BILLBOARD_DISABLED:
+		var n := s.global_basis.z
+		var denom := dir.dot(n)
+		if absf(denom) < 1e-5:
+			return INF
+		var t := (c - origin).dot(n) / denom
+		if t <= 0.0:
+			return INF
+		var local := s.global_transform.affine_inverse() * (origin + dir * t)
+		return t if absf(local.x) * s.scale.x <= half.x and absf(local.y) <= half.y else INF
+	var d := Vector2(dir.x, dir.z)
+	var o := Vector2(origin.x - c.x, origin.z - c.z)
+	var dd := d.length_squared()
+	if dd < 1e-8:
+		return INF
+	var t := -o.dot(d) / dd
+	if t <= 0.0:
+		return INF
+	var p := origin + dir * t
+	if Vector2(p.x - c.x, p.z - c.z).length() > half.x or absf(p.y - c.y) > half.y:
+		return INF
+	return t
+
+
+func _update_behaviours(delta: float) -> void:
+	hovered_sprite = pick_sprite(_pointer_origin, _pointer_dir) if _pointer_on else {}
+	var hovered_node: Sprite3D = hovered_sprite.get("node")
+	for b in _behaviours:
+		b.set_hovered(b.node == hovered_node)
+		if viewer != null and b.sprite.has_group(CWSprite.Group.PROXIMITY):
+			var v := viewer.global_position
+			var dist := Vector2(v.x - (b.tile.x + 0.5), v.z - (b.tile.y + 0.5)).length()
+			b.set_near(dist * BorgLevel.TILE_PX <= b.sprite.proximity_distance)
+		b.tick(delta * 1000.0)

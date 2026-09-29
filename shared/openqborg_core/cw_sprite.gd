@@ -38,6 +38,42 @@ var on_west := false
 var on_east := false
 ## False when the file had no CWS block (plain image): use its own size.
 var has_metadata := false
+## 3 for CWS3 (behaviour groups present), else 2.
+var version := 2
+
+## CWS3 behaviours, in this order. Each group is {enabled, from, to, repeat,
+## end, revert}: play frames `from`..`to` (backwards if from > to), `repeat`
+## times (0 = loop while active), then hold frame `end` (-1 = go back to the
+## general animation). revert bit 0: back to general when the trigger ends
+## (mouse leaves, player walks away); bit 1: back to general when it stops.
+enum Group { GENERAL, MOUSE_OVER, CLICK, PROXIMITY }
+const REVERT_ON_EXIT := 1
+const REVERT_ON_STOP := 2
+var groups: Array[Dictionary] = []
+## How close (world pixels, 256 per tile) the viewer must be for PROXIMITY.
+var proximity_distance := 64
+
+
+## True for CWS3 sprites that react to the mouse or to the player.
+func is_interactive() -> bool:
+	for g in [Group.MOUSE_OVER, Group.CLICK, Group.PROXIMITY]:
+		if g < groups.size() and groups[g].enabled:
+			return true
+	return false
+
+
+func has_group(g: int) -> bool:
+	return g < groups.size() and groups[g].enabled
+
+
+## Default groups for a sprite without CWS3 data (or a new one): the general
+## group plays every frame, the others are off.
+func default_groups() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for g in 4:
+		out.append({"enabled": g == Group.GENERAL, "from": 0, "to": maxi(0, frame_count - 1),
+				"repeat": 0, "end": -1, "revert": 0})
+	return out
 
 
 static func decode(bytes: PackedByteArray, name: String) -> CWSprite:
@@ -59,6 +95,19 @@ static func decode(bytes: PackedByteArray, name: String) -> CWSprite:
 	elif is_jpeg:
 		s._scan_jpeg(bytes)
 		if img.load_jpg_from_buffer(bytes) != OK:
+			return null
+		# CYBERWORLD's tools wrote JPEG sprites bottom-up (like a Windows
+		# bitmap), so every one is stored upside down; PNG sprites are not.
+		img.flip_y()
+	elif bytes[0] == 0x42 and bytes[1] == 0x4d:
+		# Authoring-tool source sprites: a BMP followed by "SP0n" and the same
+		# fields as a CWS3 block.
+		var bmp_size := bytes.decode_u32(2)
+		if bmp_size + 8 <= bytes.size():
+			var tag := bytes.slice(bmp_size, bmp_size + 4).get_string_from_ascii()
+			if tag.begins_with("SP0"):
+				s._parse_cws(bytes.slice(bmp_size + 4), "CWS3" if tag >= "SP03" else "CWS2")
+		if img.load_bmp_from_buffer(bytes.slice(0, mini(bmp_size, bytes.size()))) != OK:
 			return null
 	else:
 		return null
@@ -139,6 +188,7 @@ func _parse_cws(chunk: PackedByteArray, _marker: String) -> void:
 	world_x = chunk.decode_u32(o); o += 4
 	var flags := chunk.decode_u32(o); o += 4
 	multi_sided = (flags >> 2) & 1 == 1
+	version = 3 if _marker == "CWS3" else 2
 	menu_item = (flags >> 1) & 1 == 0
 	animate_on_load = chunk.decode_u32(o) == 1; o += 4
 	sides = maxi(1, chunk.decode_u32(o)); o += 4
@@ -160,8 +210,34 @@ func _parse_cws(chunk: PackedByteArray, _marker: String) -> void:
 		frame_durations.append(chunk.decode_u32(o)); o += 4
 	while frame_durations.size() < maxi(1, frame_count):
 		frame_durations.append(maxi(1, default_duration))
-	# CWS3 adds mouse-over / click / proximity animation ranges after this.
-	# TODO: parse and play those once a sample using them turns up.
+	groups = default_groups()
+	# CWS3: proximity distance, 0, group count (4), group size (6), then the
+	# groups. Layout confirmed against the surviving CYBERWORLD worlds.
+	if _marker != "CWS3" or o + 16 > chunk.size():
+		return
+	proximity_distance = chunk.decode_u32(o)
+	var count := chunk.decode_u32(o + 8)
+	var size := chunk.decode_u32(o + 12)
+	o += 16
+	if count < 1 or count > 16 or size < 6 or size > 16:
+		return
+	var parsed: Array[Dictionary] = []
+	for g in count:
+		if o + size * 4 > chunk.size():
+			break
+		parsed.append({"enabled": chunk.decode_u32(o) != 0, "from": chunk.decode_u32(o + 4),
+				"to": chunk.decode_u32(o + 8), "repeat": chunk.decode_u32(o + 12),
+				"end": chunk.decode_s32(o + 16), "revert": chunk.decode_u32(o + 20)})
+		o += size * 4
+	for g in mini(parsed.size(), 4):
+		var p := parsed[g]
+		# Clamp frame numbers to what the image actually has.
+		var last := maxi(0, cell_count - 1)
+		p.from = clampi(p.from, 0, last)
+		p.to = clampi(p.to, 0, last)
+		if p.end >= 0:
+			p.end = clampi(p.end, 0, last)
+		groups[g] = p
 
 
 func _parse_ctrl(text: String) -> void:
@@ -208,7 +284,9 @@ static var _crc_table := PackedInt64Array()
 func to_png_bytes() -> PackedByteArray:
 	var png := image.save_png_to_buffer()
 	var meta := PackedByteArray()
-	meta.append_array("CWS2".to_ascii_buffer())
+	# CWS3 when the sprite has behaviours beyond the default general loop.
+	var cws3 := is_interactive() or (not groups.is_empty() and groups != default_groups())
+	meta.append_array(("CWS3" if cws3 else "CWS2").to_ascii_buffer())
 	var vis := (8 if on_north else 0) | (4 if on_south else 0) | (2 if on_west else 0) | (1 if on_east else 0)
 	var flags := (4 if multi_sided else 0) | (0 if menu_item else 2)
 	for v in [cell_count, cell_width, cell_height, world_z, world_y, world_x, flags,
@@ -217,6 +295,12 @@ func to_png_bytes() -> PackedByteArray:
 		_put_u32_le(meta, v)
 	for f in frame_count:
 		_put_u32_le(meta, frame_durations[f] if f < frame_durations.size() else default_duration)
+	if cws3:
+		for v in [proximity_distance, 0, 4, 6]:
+			_put_u32_le(meta, v)
+		for g in groups:
+			for v in [1 if g.enabled else 0, g.from, g.to, g.repeat, g.end & 0xffffffff, g.revert]:
+				_put_u32_le(meta, v)
 	# Insert right after IHDR (8-byte signature + 25-byte IHDR chunk).
 	var out := png.slice(0, 33)
 	out.append_array(_png_chunk("cxBX", meta))

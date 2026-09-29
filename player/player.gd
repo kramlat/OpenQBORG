@@ -385,6 +385,7 @@ func _on_page_request(msg: Dictionary) -> void:
 func _process(_delta: float) -> void:
 	if _browser.visible:
 		_update_nav_buttons()
+	_update_pointer()
 	if world == null or _loading:
 		return
 	if _world_dirty:
@@ -443,6 +444,12 @@ func _on_view_input(event: InputEvent) -> void:
 		var pos: Vector2 = event.position * Vector2(_viewport.size) / _view_container.size
 		var origin := cam.project_ray_origin(pos)
 		var dir := cam.project_ray_normal(pos)
+		# Sprites first: clicking one plays its click behaviour and follows its
+		# tile's link, like the original.
+		var sprite_tile := world.click(origin, dir)
+		if sprite_tile.x >= 0:
+			_activate_tile(sprite_tile)
+			return
 		if dir.y < -0.001:
 			var hit := origin + dir * (-origin.y / dir.y)
 			_activate_tile(world.tile_of(hit))
@@ -468,6 +475,10 @@ func _maybe_screenshot() -> void:
 	if _shot_started:
 		return
 	_shot_started = true
+	var at := OS.get_environment("OPENQBORG_POS")
+	if not at.is_empty() and world != null:
+		var xy := at.split(",")
+		walker.place(Vector2(float(xy[0]), float(xy[1])), walker.camera.position.y, walker.yaw)
 	for i in 240:
 		await get_tree().process_frame
 	if world == null:
@@ -479,6 +490,7 @@ func _maybe_screenshot() -> void:
 	print("screenshot: status=%s music=%s page=%s" % [_status.text, music.current, _side_page.current_url])
 	var sfx := world.find_children("*", "AudioStreamPlayer3D", true, false).map(func(p): return "%s:%s" % [p.stream.get_class(), p.playing])
 	print("screenshot: music_stream=%s sfx=%s" % [music.get_child(1).stream, sfx])
+	print("screenshot: behaviours=%s" % [world._behaviours.map(func(b): return "%s@%s g%d f%d" % [b.sprite.proximity_distance, b.tile, b.group, b.frame])])
 	print("screenshot: animated surfaces=%d walls=%d frames(flr)=%s" % [world._surface_anims.size(), world._wall_anims.size(),
 			world._floor_frames.images.size() if world._floor_frames else 0])
 	get_viewport().get_texture().get_image().save_png(out)
@@ -720,3 +732,33 @@ static func _frame_textures(frames: BorgFrames) -> Array[Texture2D]:
 		for img in frames.images:
 			out.append(ImageTexture.create_from_image(img))
 	return out
+
+
+## Feeds the mouse ray to the world (mouse-over behaviours) and shows a
+## pointing hand over anything clickable: interactive sprites and linked tiles.
+func _update_pointer() -> void:
+	if world == null or _loading:
+		return
+	var local := _view_container.get_local_mouse_position()
+	var inside := _view_container.visible and Rect2(Vector2.ZERO, _view_container.size).has_point(local) \
+			and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED
+	var cam := walker.camera
+	var pos := local * Vector2(_viewport.size) / _view_container.size
+	world.set_pointer(cam.project_ray_origin(pos), cam.project_ray_normal(pos), inside)
+	var clickable := false
+	if inside:
+		var hovered: Dictionary = world.hovered_sprite
+		if not hovered.is_empty():
+			var b: SpriteBehaviour = hovered.get("behaviour")
+			clickable = (b != null and b.reacts_to_mouse()) or _tile_has_link(hovered.tile)
+		else:
+			var dir := cam.project_ray_normal(pos)
+			if dir.y < -0.001:
+				var origin := cam.project_ray_origin(pos)
+				clickable = _tile_has_link(world.tile_of(origin + dir * (-origin.y / dir.y)))
+	_view_container.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if clickable else Control.CURSOR_ARROW
+
+
+func _tile_has_link(t: Vector2i) -> bool:
+	return world.in_bounds(t) and (world.level.get_cell("gtw", t.x, t.y) > 0 or world.level.get_cell("gtw2", t.x, t.y) > 0
+			or world.level.get_cell("js", t.x, t.y) > 0)
