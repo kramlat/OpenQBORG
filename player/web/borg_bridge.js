@@ -97,6 +97,25 @@
     watch.observe(document, { childList: true, subtree: true });
   }
 
+  // --- Surface screens ---------------------------------------------------
+  // Pages shown on web surfaces can talk to the world's script:
+  //   qborg.send(data)       -> borg.on("surfaceMessage", ({id, data}) => ...)
+  //   qborg.onMessage(fn)    <- borg.postToSurface(id, data)
+  var listeners = [];
+  window.qborg = {
+    send: function (data) { send({ type: "surfaceMessage", data: data }); },
+    onMessage: function (fn) { if (typeof fn === "function") listeners.push(fn); }
+  };
+  if (window.ipcMessage && window.ipcMessage.addListener) {
+    window.ipcMessage.addListener(function (raw) {
+      var msg;
+      try { msg = JSON.parse(raw); } catch (e) { return; }
+      if (msg && msg.type === "surfaceMessage") {
+        listeners.forEach(function (fn) { try { fn(msg.data); } catch (e) { console.error(e); } });
+      }
+    });
+  }
+
   // --- JS dialogs -----------------------------------------------------------
   // Native JS dialogs crash godot-cef on current Godot builds, and old pages
   // use them freely. Show them as Godot dialogs instead. They can't block,

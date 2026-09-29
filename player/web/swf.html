@@ -1,0 +1,14 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Shows one SWF full-size; the bridge script loads Ruffle for it. Used for
+     .swf web surfaces: swf.html?src=<address of the .swf> -->
+<meta charset="utf-8">
+<title>SWF</title>
+<style>html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+embed { display: block; width: 100%; height: 100%; }</style>
+<script>
+var src = new URLSearchParams(location.search).get("src") || "";
+document.write('<embed src="' + src.replace(/[&"<>]/g, function (c) {
+  return { "&": "&amp;", '"': "&quot;", "<": "&lt;", ">": "&gt;" }[c];
+}) + '" type="application/x-shockwave-flash" width="100%" height="100%">');
+</script>

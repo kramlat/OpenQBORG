@@ -39,6 +39,11 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
   `prompt()` appear as Godot dialogs (they can't block, so `confirm()` answers
   OK and `prompt()` returns its default). Pages from
   local worlds are served over loopback so their cookie-based save games work.
+* **Web surfaces**: pages, HTML5 video and SWF on walls, floors and ceilings,
+  spanning as many tiles as you like (a cinema screen), with sound coming from
+  the screen and clicks passed to the page. Worlds declare them (`<srf>`) or
+  scripts create them, including script-made HTML5 screens that talk to the
+  world script. The editor places them with a Surfaces dialog.
 * **Flash** in world pages plays through [Ruffle](https://ruffle.rs), an open source
   Flash emulator in WebAssembly, sandboxed inside Chromium (`tools/fetch-assets.sh
   ruffle`). It loads only on pages that contain Flash.

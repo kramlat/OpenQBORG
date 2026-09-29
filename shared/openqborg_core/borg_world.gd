@@ -71,6 +71,18 @@ var _pointer_origin := Vector3.ZERO
 var _pointer_dir := Vector3.ZERO
 var _pointer_on := false
 var hovered_sprite: Dictionary = {}
+## Web surfaces (OpenQBORG extension): id -> {def, mesh, material, corners,
+## normal, texture_size}. The player puts live pages on them; elsewhere
+## they show as dark screens.
+var surface_nodes := {}
+## Runtime surfaces from scripts, by id (added to the level's own).
+var _runtime_surfaces := {}
+## Ceilings drawn? (The editor hides them while looking down from above.)
+var ceilings_visible := true:
+	set(value):
+		ceilings_visible = value
+		if _content != null and _content.has_node("Ceiling"):
+			_content.get_node("Ceiling").visible = value
 ## Sound tiles play only while this is on (the editor mutes them while
 ## orbiting; the player leaves it on).
 var sounds_enabled := true:
@@ -162,6 +174,7 @@ func rebuild() -> void:
 	_build_colliders()
 	_build_sprites()
 	_build_sounds()
+	_build_surfaces_web()
 	geometry_rebuilt.emit()
 
 
@@ -350,6 +363,7 @@ func _build_surfaces() -> void:
 		# Flipped plane: faces down, texture mirrored like the original.
 		_content.add_child(_surface_multimesh("cei", _ceiling_tiles, _ceiling_tile_count,
 				Basis(Vector3.RIGHT, PI), ceiling_height))
+		_content.get_node("Ceiling").visible = ceilings_visible
 
 
 ## One MultiMesh instance per tile; INSTANCE_CUSTOM.r picks the array layer.
@@ -697,3 +711,130 @@ func _update_behaviours(delta: float) -> void:
 			var dist := Vector2(v.x - (b.tile.x + 0.5), v.z - (b.tile.y + 0.5)).length()
 			b.set_near(dist * BorgLevel.TILE_PX <= b.sprite.proximity_distance)
 		b.tick(delta * 1000.0)
+
+
+# --- Web surfaces -------------------------------------------------------------------
+
+const SURFACE_MAX_TEXTURE := 2048
+
+
+## All surfaces: the level's <srf> list plus any added by scripts.
+func surface_defs() -> Array[Dictionary]:
+	var defs := level.surfaces()
+	var by_id := {}
+	for d in defs:
+		by_id[d.id] = d
+	for id in _runtime_surfaces:
+		by_id[id] = _runtime_surfaces[id]
+	var out: Array[Dictionary] = []
+	for id in by_id:
+		out.append(by_id[id])
+	return out
+
+
+## Adds or replaces a surface at runtime (world scripts). Missing fields use
+## the defaults of BorgLevel.surfaces().
+func set_surface(def: Dictionary) -> void:
+	var d := {"id": "surface", "url": "about:blank", "kind": "wall", "face": "s", "x": 0, "y": 0,
+			"len": 1, "w": 1, "d": 1, "z": 0, "h": 256}
+	d.merge(def, true)
+	_runtime_surfaces[str(d.id)] = d
+	rebuild()
+
+
+func remove_surface(id: String) -> void:
+	_runtime_surfaces.erase(id)
+	rebuild()
+
+
+## Corners (top-left, top-right, bottom-right, bottom-left as seen by a
+## viewer in front), the facing normal and the page size in pixels.
+func surface_geometry(d: Dictionary) -> Dictionary:
+	const EPS := 0.006
+	var x := float(d.x)
+	var y := float(d.y)
+	var corners: Array[Vector3] = []
+	var normal := Vector3.UP
+	var px := Vector2(256, 256)
+	match d.kind:
+		"floor":
+			var h := 0.012
+			corners = [Vector3(x, h, y), Vector3(x + d.w, h, y), Vector3(x + d.w, h, y + d.d), Vector3(x, h, y + d.d)]
+			px = Vector2(d.w * 256, d.d * 256)
+		"ceiling":
+			var h := ceiling_height - 0.012
+			corners = [Vector3(x + d.w, h, y), Vector3(x, h, y), Vector3(x, h, y + d.d), Vector3(x + d.w, h, y + d.d)]
+			normal = Vector3.DOWN
+			px = Vector2(d.w * 256, d.d * 256)
+		_:
+			var bottom: float = d.z * PX
+			var top: float = (d.z + d.h) * PX
+			var n: float = d.len
+			match d.face:
+				"n":
+					var z := y - EPS
+					corners = [Vector3(x + n, top, z), Vector3(x, top, z), Vector3(x, bottom, z), Vector3(x + n, bottom, z)]
+					normal = Vector3.FORWARD
+				"e":
+					var xx := x + 1 + EPS
+					corners = [Vector3(xx, top, y + n), Vector3(xx, top, y), Vector3(xx, bottom, y), Vector3(xx, bottom, y + n)]
+					normal = Vector3.RIGHT
+				"w":
+					var xx := x - EPS
+					corners = [Vector3(xx, top, y), Vector3(xx, top, y + n), Vector3(xx, bottom, y + n), Vector3(xx, bottom, y)]
+					normal = Vector3.LEFT
+				_:
+					var z := y + 1 + EPS
+					corners = [Vector3(x, top, z), Vector3(x + n, top, z), Vector3(x + n, bottom, z), Vector3(x, bottom, z)]
+					normal = Vector3.BACK
+			px = Vector2(n * 256, d.h)
+	# Keep the page within GPU-friendly limits, same aspect.
+	var scale := minf(1.0, SURFACE_MAX_TEXTURE / maxf(px.x, px.y))
+	return {"corners": corners, "normal": normal, "texture_size": Vector2i(maxi(64, int(px.x * scale)), maxi(64, int(px.y * scale)))}
+
+
+func _build_surfaces_web() -> void:
+	surface_nodes.clear()
+	for d in surface_defs():
+		var g := surface_geometry(d)
+		var c: Array[Vector3] = g.corners
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for v in [[c[0], Vector2(0, 0)], [c[1], Vector2(1, 0)], [c[2], Vector2(1, 1)],
+				[c[0], Vector2(0, 0)], [c[2], Vector2(1, 1)], [c[3], Vector2(0, 1)]]:
+			st.set_uv(v[1])
+			st.add_vertex(v[0])
+		var mat := unshaded_material(null)
+		mat.albedo_color = Color(0.06, 0.06, 0.08)
+		var mi := MeshInstance3D.new()
+		mi.name = "Surface_" + str(d.id)
+		mi.mesh = st.commit()
+		mi.material_override = mat
+		_content.add_child(mi)
+		surface_nodes[str(d.id)] = {"def": d, "mesh": mi, "material": mat, "corners": c,
+				"normal": g.normal, "texture_size": g.texture_size}
+
+
+## The surface a ray hits first: {id, uv, t} or {}.
+func pick_surface(origin: Vector3, dir: Vector3) -> Dictionary:
+	var best := {}
+	var best_t := INF
+	for id in surface_nodes:
+		var s: Dictionary = surface_nodes[id]
+		var c: Array[Vector3] = s.corners
+		var n: Vector3 = s.normal
+		var denom := dir.dot(n)
+		if absf(denom) < 1e-6:
+			continue
+		var t := (c[0] - origin).dot(n) / denom
+		if t <= 0.0 or t >= best_t:
+			continue
+		var p := origin + dir * t
+		var u_axis := c[1] - c[0]
+		var v_axis := c[3] - c[0]
+		var u := (p - c[0]).dot(u_axis) / u_axis.length_squared()
+		var v := (p - c[0]).dot(v_axis) / v_axis.length_squared()
+		if u >= 0.0 and u <= 1.0 and v >= 0.0 and v <= 1.0:
+			best_t = t
+			best = {"id": id, "uv": Vector2(u, v), "t": t}
+	return best

@@ -102,3 +102,9 @@ func _on_ipc_message(message: String) -> void:
 
 func _process(_delta: float) -> void:
 	HtmlView.push_audio(_cef, _audio)
+
+
+## A surface page's qborg.send(data), for borg.on("surfaceMessage").
+func send_surface_message(id: String, data: Variant) -> void:
+	if _cef != null:
+		_send({"type": "surfaceMessage", "id": id, "data": data})

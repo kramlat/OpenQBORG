@@ -25,6 +25,23 @@ var _roots: PackedStringArray = []
 var _clients: Array = []
 ## Where Ruffle (res://web/ruffle, tools/fetch-assets.sh ruffle) is served.
 const RUFFLE_DIR := "__ruffle__"
+const OQB_DIR := "__oqb__"
+const OQB_PAGES := ["swf.html"]
+## Script-made HTML5 pages for surfaces, by name (see set_inline_page).
+var _inline := {}
+
+
+## Serves `html` at a stable address (script-made surface screens); a
+## <base> makes its relative links resolve against `base_url`.
+func set_inline_page(name: String, html: String, base_url: String) -> String:
+	var key := name.uri_encode() + ".html"
+	_inline[key] = "<base href=\"%s\">\n%s" % [to_served(base_url).xml_escape(true), html]
+	return helper_page("inline/" + key) + "?v=%d" % hash(html)
+
+
+## Address of one of OpenQBORG's helper pages.
+func helper_page(page: String) -> String:
+	return origin() + "/" + OQB_DIR + "/" + page
 
 
 ## Base URL of the served Ruffle build, or "" when it isn't installed.
@@ -115,6 +132,17 @@ func _respond(peer: StreamPeerTCP, request_line: String) -> void:
 		return
 	if parts.size() < 2 or not (parts[0] == "GET" or parts[0] == "HEAD"):
 		_send(peer, 405, "text/plain", "Method not allowed".to_utf8_buffer())
+		return
+	# OpenQBORG's own helper pages (e.g. swf.html for SWF surfaces).
+	if target.begins_with(prefix + OQB_DIR + "/"):
+		var page := target.substr((prefix + OQB_DIR + "/").length())
+		if page.begins_with("inline/") and _inline.has(page.trim_prefix("inline/")):
+			_send(peer, 200, "text/html; charset=utf-8", (_inline[page.trim_prefix("inline/")] as String).to_utf8_buffer(), true)
+			return
+		if not page in OQB_PAGES:
+			_send(peer, 404, "text/plain", "Not found".to_utf8_buffer(), true)
+			return
+		_send(peer, 200, "text/html", FileAccess.get_file_as_bytes("res://web/" + page), true)
 		return
 	if target.begins_with(ruffle_prefix):
 		# Served from the player's own resources, so this works in exports too.

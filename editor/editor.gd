@@ -103,7 +103,7 @@ func _build_ui() -> void:
 	var bar := HBoxContainer.new()
 	root.add_child(bar)
 	for spec in [["New", new_level], ["Open…", _ask_open], ["Save", save], ["Save As…", _ask_save_as],
-			["Undo", undo.undo], ["Redo", undo.redo], ["Walk", _toggle_walk],
+			["Undo", undo.undo], ["Redo", undo.redo], ["Walk", _toggle_walk], ["Surfaces…", _edit_surfaces],
 			["Play in Player", _play_in_player]]:
 		var b := Button.new()
 		b.text = spec[0]
@@ -160,7 +160,7 @@ func _build_left_dock() -> Control:
 	_layer_list.custom_minimum_size.y = 260
 	for l in LAYERS:
 		_layer_list.add_item(l[1])
-	_layer_list.item_selected.connect(func(_i): _refresh_values(); _refresh_overlay())
+	_layer_list.item_selected.connect(func(_i): _refresh_values(); _refresh_overlay(); _apply_sound_state())
 	dock.add_child(_layer_list)
 	dock.add_child(_heading("Value"))
 	_value_spin = SpinBox.new()
@@ -1081,6 +1081,8 @@ func _maybe_screenshot() -> void:
 				_layer_list.select(i)
 		_refresh_values()
 		_refresh_overlay()
+	if not OS.get_environment("OPENQBORG_SURFACES").is_empty():
+		_edit_surfaces()
 	if not OS.get_environment("OPENQBORG_BEHAVIOUR").is_empty():
 		_edit_sprite_behaviour(int(OS.get_environment("OPENQBORG_BEHAVIOUR")))
 	if not OS.get_environment("OPENQBORG_TEST").is_empty():
@@ -1331,6 +1333,8 @@ func _lib_preview() -> void:
 func _apply_sound_state() -> void:
 	if world != null:
 		world.sounds_enabled = _hear_sounds or _walker != null
+		# Looking down from above, ceilings would hide an indoor world.
+		world.ceilings_visible = _walker != null or _current_layer() == "cei"
 
 
 ## Plays (or, if it's already playing, stops) sound or music `value` of the
@@ -1414,3 +1418,25 @@ func _update_walk_pointer() -> void:
 			and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED
 	var pos := local * Vector2(_viewport.size) / _view_container.size
 	world.set_pointer(_walker.camera.project_ray_origin(pos), _walker.camera.project_ray_normal(pos), inside)
+
+
+# --- Web surfaces -------------------------------------------------------------------
+
+func _edit_surfaces() -> void:
+	var dialog := SurfaceDialog.new()
+	add_child(dialog)
+	dialog.open(level.surfaces())
+	dialog.applied.connect(func(defs: Array):
+		var before := level.serialize()
+		level.set_surfaces(defs)
+		var after := level.serialize()
+		if after != before:
+			undo.create_action("Edit web surfaces")
+			undo.add_do_method(_restore_snapshot.bind(after))
+			undo.add_undo_method(_restore_snapshot.bind(before))
+			undo.commit_action(false)
+			_mark_unsaved()
+			_reload_world()
+			_status.text = "%d web surface(s). They show as dark screens here; the player shows the pages." % defs.size())
+	dialog.visibility_changed.connect(func(): if not dialog.visible: dialog.queue_free())
+	dialog.popup_centered()

@@ -48,6 +48,8 @@ var _loading_url := ""
 ## Per-frame textures when the backdrop or emblem is animated.
 var _backdrop_textures: Array[Texture2D] = []
 var _emblem_textures: Array[Texture2D] = []
+## Live web surfaces by id (see WebSurface).
+var _surfaces := {}
 
 
 func _ready() -> void:
@@ -255,9 +257,11 @@ func _load_world(url: String, push_history: bool) -> void:
 	if push_history and not current_url.is_empty() and current_url != url:
 		history.append(current_url)
 	_update_nav_buttons()
+	_clear_surfaces()
 	if world != null:
 		world.queue_free()
 	world = next
+	world.geometry_rebuilt.connect(_sync_surfaces)
 	world.viewer = walker.camera
 	_viewport.add_child(world)
 	current_url = url
@@ -269,6 +273,7 @@ func _load_world(url: String, push_history: bool) -> void:
 	walker.place(level.start_tile_position(), level.start_eye_height_px() * BorgWorld.PX, level.start_yaw())
 	_last_tile = Vector2i(-1, -1)
 	scripts.start(world, _player_state())
+	_sync_surfaces()
 	_close_full_page()
 	var title: String = level.meta.get("Title", "")
 	DisplayServer.window_set_title("%s — OpenQBORG" % title if not title.is_empty() else "OpenQBORG")
@@ -446,12 +451,23 @@ func _on_view_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		walker.look(event.relative)
 		return
+	if event is InputEventMouseButton and event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		var wpos: Vector2 = event.position * Vector2(_viewport.size) / _view_container.size
+		var wh := world.pick_surface(walker.camera.project_ray_origin(wpos), walker.camera.project_ray_normal(wpos))
+		if not wh.is_empty() and _surfaces.has(wh.id):
+			_surfaces[wh.id].scroll(wh.uv, event.button_index == MOUSE_BUTTON_WHEEL_UP)
+		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		_view_container.grab_focus()
 		var cam := walker.camera
 		var pos: Vector2 = event.position * Vector2(_viewport.size) / _view_container.size
 		var origin := cam.project_ray_origin(pos)
 		var dir := cam.project_ray_normal(pos)
+		# A web surface under the pointer gets the click (a video's play button).
+		var on_surface := world.pick_surface(origin, dir)
+		if not on_surface.is_empty() and _surfaces.has(on_surface.id):
+			_surfaces[on_surface.id].click(on_surface.uv)
+			return
 		# Sprites first: clicking one plays its click behaviour and follows its
 		# tile's link, like the original.
 		var sprite_tile := world.click(origin, dir)
@@ -498,6 +514,9 @@ func _maybe_screenshot() -> void:
 	print("screenshot: status=%s music=%s page=%s" % [_status.text, music.current, _side_page.current_url])
 	var sfx := world.find_children("*", "AudioStreamPlayer3D", true, false).map(func(p): return "%s:%s" % [p.stream.get_class(), p.playing])
 	print("screenshot: music_stream=%s sfx=%s" % [music.get_child(1).stream, sfx])
+	for sid in _surfaces:
+		var simg: Image = _surfaces[sid].get_texture().get_image()
+		simg.save_png(out.get_basename() + "_surface_%s.png" % sid)
 	print("screenshot: behaviours=%s" % [world._behaviours.map(func(b): return "%s@%s g%d f%d" % [b.sprite.proximity_distance, b.tile, b.group, b.frame])])
 	print("screenshot: animated surfaces=%d walls=%d frames(flr)=%s" % [world._surface_anims.size(), world._wall_anims.size(),
 			world._floor_frames.images.size() if world._floor_frames else 0])
@@ -533,6 +552,16 @@ func _on_script_request(msg: Dictionary) -> void:
 			_status.text = str(msg.text)
 		"log":
 			print("[world script] ", msg.text)
+		"setSurface":
+			var def: Dictionary = msg.get("def", {})
+			def["id"] = str(msg.get("id", "surface"))
+			world.set_surface(def)
+		"removeSurface":
+			world.remove_surface(str(msg.get("id", "")))
+		"postToSurface":
+			var target: WebSurface = _surfaces.get(str(msg.get("id", "")))
+			if target != null:
+				target.send_message(msg.get("data"))
 
 
 ## alert()/confirm()/prompt() from world pages, shown by Godot (native JS
@@ -755,8 +784,14 @@ func _update_pointer() -> void:
 	world.set_pointer(cam.project_ray_origin(pos), cam.project_ray_normal(pos), inside)
 	var clickable := false
 	if inside:
+		var on_surface := world.pick_surface(cam.project_ray_origin(pos), cam.project_ray_normal(pos))
+		if not on_surface.is_empty() and _surfaces.has(on_surface.id):
+			_surfaces[on_surface.id].pointer_move(on_surface.uv)
+			clickable = true
 		var hovered: Dictionary = world.hovered_sprite
-		if not hovered.is_empty():
+		if clickable:
+			pass
+		elif not hovered.is_empty():
 			var b: SpriteBehaviour = hovered.get("behaviour")
 			clickable = (b != null and b.reacts_to_mouse()) or _tile_has_link(hovered.tile)
 		else:
@@ -770,3 +805,64 @@ func _update_pointer() -> void:
 func _tile_has_link(t: Vector2i) -> bool:
 	return world.in_bounds(t) and (world.level.get_cell("gtw", t.x, t.y) > 0 or world.level.get_cell("gtw2", t.x, t.y) > 0
 			or world.level.get_cell("js", t.x, t.y) > 0)
+
+
+# --- Web surfaces ---------------------------------------------------------------------
+
+## Matches live pages to the world's surfaces: keeps pages whose address and
+## size are unchanged (so a video keeps playing through rebuilds), makes new
+## ones, drops the rest, and puts each page's texture on its surface.
+func _sync_surfaces() -> void:
+	if world == null or not HtmlView.cef_available():
+		return
+	var live := {}
+	for id in world.surface_nodes:
+		var s: Dictionary = world.surface_nodes[id]
+		# Script-made HTML5 screens are served by the page server.
+		var url := pages.set_inline_page(id, str(s.def.html), world.base_url) if s.def.has("html") \
+				else _surface_url(str(s.def.url))
+		var ws: WebSurface = _surfaces.get(id)
+		if ws != null and (ws.url != url or ws.size != s.texture_size):
+			ws.queue_free()
+			ws = null
+		if ws == null:
+			ws = WebSurface.new(url, s.texture_size)
+			ws.surface_id = id
+			ws.page_request.connect(_on_surface_request)
+			add_child(ws)
+		var mat: StandardMaterial3D = s.material
+		mat.albedo_texture = ws.get_texture()
+		mat.albedo_color = Color.WHITE
+		var c: Array[Vector3] = s.corners
+		ws.place_audio(_viewport, (c[0] + c[2]) * 0.5 + s.normal * 0.2, c[0].distance_to(c[1]))
+		live[id] = ws
+	for id in _surfaces:
+		if not live.has(id):
+			_surfaces[id].queue_free()
+	_surfaces = live
+
+
+func _clear_surfaces() -> void:
+	for id in _surfaces:
+		_surfaces[id].queue_free()
+	_surfaces = {}
+
+
+## Surface addresses are relative to the world; local files go through the
+## page server, and .swf files get a Ruffle page.
+func _surface_url(raw: String) -> String:
+	var url := raw if raw.contains("://") or raw.begins_with("about:") or raw.begins_with("data:") \
+			else BorgUrl.join(world.base_url, raw)
+	url = pages.to_served(url)
+	if url.get_slice("?", 0).to_lower().ends_with(".swf") and pages.is_running():
+		url = pages.helper_page("swf.html") + "?src=" + url.uri_encode()
+	return url
+
+
+## Requests from a surface's page: messages for the world script, or the
+## usual page requests (borg:// links, dialogs...).
+func _on_surface_request(msg: Dictionary) -> void:
+	if msg.type == "surfaceMessage":
+		scripts.send_surface_message(str(msg.surface), msg.get("data"))
+	else:
+		_on_page_request(msg)

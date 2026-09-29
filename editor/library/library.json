@@ -147,6 +147,12 @@
 		},
 		{
 			"blocks": true,
+			"category": "Objects",
+			"file": "seat.sprite",
+			"name": "Cinema seat"
+		},
+		{
+			"blocks": true,
 			"category": "Nature",
 			"file": "rock.sprite",
 			"name": "Rock"

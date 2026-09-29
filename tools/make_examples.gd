@@ -72,10 +72,12 @@ func _init() -> void:
 	_make_emblem("hello.emb", "HELLO QBORG", Color("#1d4f8c"), Color("#3fa9f5"))
 	_make_emblem("sprawl.emb", "THE SPRAWL", Color("#8c5a1d"), Color("#f5c03f"))
 	_make_emblem("puzzle.emb", "ORB VAULT", Color("#3b1d8c"), Color("#a63ff5"))
+	_make_emblem("theater.emb", "STARLIGHT", Color("#5a0f1f"), Color("#e2461b"))
 	_make_pages()
 	_make_hello()
 	_make_sprawl()
 	_make_puzzle()
+	_make_theater()
 	print("Starter library written to ", lib)
 	print("Example worlds written to ", examples)
 	quit()
@@ -621,6 +623,17 @@ func _make_sprites() -> void:
 		fire_frames.append(t)
 	_save_gif_sprite("campfire.sprite", fire_frames, 110, "Campfire (animated GIF)", "Lights", true)
 
+	# Cinema seat
+	var seat := _canvas(96, 96)
+	seat.fill_rect(Rect2i(14, 8, 68, 52), Color("#9b1b2a"))
+	seat.fill_rect(Rect2i(14, 8, 68, 6), Color("#c23446"))
+	seat.fill_rect(Rect2i(10, 56, 76, 20), Color("#b3263a"))
+	seat.fill_rect(Rect2i(6, 40, 10, 40), Color("#3a3a42"))
+	seat.fill_rect(Rect2i(80, 40, 10, 40), Color("#3a3a42"))
+	seat.fill_rect(Rect2i(24, 76, 8, 20), Color("#2a2a30"))
+	seat.fill_rect(Rect2i(64, 76, 8, 20), Color("#2a2a30"))
+	_save_sprite("seat.sprite", _sprite("seat", [seat], Vector2i(130, 130)), "Cinema seat", "Objects", true)
+
 	# Rock
 	var rock := _canvas(96, 64)
 	_fill_ellipse(rock, Vector2(48, 44), 44, 20, Color("#5f5f66"))
@@ -1056,7 +1069,7 @@ func _finish(level: BorgLevel, file: String, nav: Image, emblem: String) -> void
 	level.ext.append({"tag": "nav", "attrs": {}, "items": [{"kind": "file", "href": file.get_basename() + ".nav", "text": ""}]})
 	level.ext.append({"tag": "emb", "attrs": {}, "items": [{"kind": "file", "href": emblem, "text": ""}]})
 	# Classic <ext> order, as CYBERWORLD's tools wrote it; extensions last.
-	var order := ["flr", "cei", "wal", "nav", "emb", "bdp", "pal", "spr", "gtw", "gtw2", "gtw3", "wav", "mid", "js"]
+	var order := ["flr", "cei", "wal", "nav", "emb", "bdp", "pal", "spr", "gtw", "gtw2", "gtw3", "wav", "mid", "js", "srf"]
 	level.ext.sort_custom(func(a, b): return order.find(a.tag) < order.find(b.tag))
 	level.save_file(out.path_join(file))
 	print("  %-12s %dx%d" % [file, level.width, level.height])
@@ -1066,7 +1079,8 @@ func _finish(level: BorgLevel, file: String, nav: Image, emblem: String) -> void
 static func _nav(level: BorgLevel, px: int) -> Image:
 	var colors := {Floor.GRASS: Color("#4f8f35"), Floor.PATH: Color("#c8b48c"), Floor.WATER: Color("#2e6fb5"),
 			Floor.STONE: Color("#77777f"), Floor.PLATE: Color("#aab4be"), Floor.PAD: Color("#7fe3ff"),
-			Floor.SAND: Color("#e3d196")}
+			Floor.SAND: Color("#e3d196"), Floor.PLANKS: Color("#8a5a2b"), Floor.SNOW: Color("#eef3f8"),
+			Floor.DIRT: Color("#5f4530"), Floor.LAVA: Color("#d4380d")}
 	var img := Image.create(level.width * px, level.height * px, false, Image.FORMAT_RGB8)
 	for y in level.height:
 		for x in level.width:
@@ -1116,7 +1130,7 @@ func _make_hello() -> void:
 		"#..~~~..=..t2..#",
 		"#.......=......#",
 		"#.T.....=....T.#",
-		"#.......=......#",
+		"#......R=......#",
 		"#.......S......#",
 		"################",
 	])
@@ -1132,6 +1146,7 @@ func _make_hello() -> void:
 		"F": {"flr": p, "obj": 3, "wal": 1, "wav": 1},
 		"P": {"flr": p, "obj": 4, "gtw": 1},
 		"Q": {"flr": p, "obj": 4, "gtw": 2},
+		"R": {"flr": g, "obj": 4, "gtw": 3},
 		"i": {"flr": g, "obj": 5, "wal": 1},
 		"s": {"flr": g, "obj": 5, "wal": 1},
 	}
@@ -1158,7 +1173,7 @@ func _make_hello() -> void:
 	var bdp := level.ensure_ext("bdp")
 	bdp.attrs = {"BC": "c98f2a", "POS": "14"}
 	bdp.items = [{"kind": "file", "href": "starter-sky.bck", "text": ""}]
-	level.set_ext_files("gtw", PackedStringArray(["sprawl", "puzzle"]))
+	level.set_ext_files("gtw", PackedStringArray(["sprawl", "puzzle", "theater"]))
 	level.set_ext_files("gtw2", PackedStringArray(["info.url", "move.url"]))
 	level.set_ext_files("gtw3", PackedStringArray(["welcome.url"]))
 	level.set_ext_files("wav", PackedStringArray([audio_names["fountain"]]))
@@ -1353,3 +1368,126 @@ borg.on("click", ({ id }) => {
 });
 """ % [at["o"].size(), JSON.stringify(gates), a.x, a.y + 1, b.x, b.y + 1])
 	_finish(level, "puzzle.borg", _nav(level, 9), "puzzle.emb")
+
+
+func _make_theater() -> void:
+	var level := _base_level(16, 16, "The Starlight Cinema", "OpenQBORG example: web surfaces (a film screen and a scripted HTML5 marquee)")
+	level.set_ceiling_height_px(1020)
+	var cei_offsets := PackedInt64Array()
+	for i in Ceiling.size():
+		cei_offsets.append(i * TILE * TILE)
+	level.set_ext_cfil("cei", "starter.cei", cei_offsets)
+	level.set_ext_files("spr", PackedStringArray(["seat.sprite", "portal.sprite", "lamp.sprite"]))
+	var rows := PackedStringArray([
+		"################",
+		"#..............#",
+		"#..............#",
+		"#.l..........l.#",
+		"#.ssssssssssss.#",
+		"#..............#",
+		"#.ssssssssssss.#",
+		"#..............#",
+		"#.ssssssssssss.#",
+		"#..............#",
+		"#.ssssssssssss.#",
+		"#..............#",
+		"#..............#",
+		"#..............#",
+		"#......S.....X.#",
+		"################",
+	])
+	var legend := {
+		"#": {"flr": Floor.PLANKS, "hgt": 255, "wal": Wall.WOOD},
+		".": {"flr": Floor.PLANKS}, "S": {"flr": Floor.PLANKS, "js": 1},
+		"s": {"flr": Floor.PLANKS, "obj": 1, "wal": 1},
+		"l": {"flr": Floor.PLANKS, "obj": 3, "wal": 1},
+		"X": {"flr": Floor.PAD, "obj": 2, "gtw": 1},
+	}
+	var at := _paint(level, rows, legend)
+	for y in level.height:
+		for x in level.width:
+			level.set_cell("cei", x, y, Ceiling.STARS)
+	var start: Vector2i = at["S"][0]
+	level.set_start_tile_position(Vector2(start) + Vector2(0.5, 0.5))
+	level.set_start_yaw(0.0)
+	level.start_pos[2] = 20
+	level.ensure_ext("bdp").attrs = {"BC": "0a0605", "POS": "0"}
+	level.set_ext_files("gtw", PackedStringArray(["hello"]))
+	level.set_ext_files("gtw3", PackedStringArray(["theater.url"]))
+	level.set_ext_files("js", PackedStringArray(["theater.js"]))
+	# The screen: a surface across ten wall faces of the north wall, declared
+	# in the world itself (no script needed).
+	level.set_surfaces([{"id": "screen", "url": "html/film.html", "kind": "wall", "face": "s",
+			"x": 4, "y": 0, "len": 8, "w": 1, "d": 1, "z": 140, "h": 870}])
+
+	# The film: a Mandelbrot zoom scored with the ambient pad.
+	if have_ffmpeg:
+		OS.execute("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i",
+				"mandelbrot=size=640x360:rate=25:end_scale=0.02,trim=duration=16,format=yuv420p",
+				"-i", out.path_join("media").path_join(audio_names["ambient"]), "-shortest",
+				"-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "42", "-row-mt", "1", "-c:a", "libopus", "-b:a", "64k",
+				"-fflags", "+bitexact", "-flags", "+bitexact", out.path_join("media/film.webm")], [])
+	_write_text("html/film.html", """<!doctype html>
+<meta charset="utf-8">
+<title>Now showing</title>
+<style>html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+video { width: 100%; height: 100%; object-fit: cover; }</style>
+<video src="../media/film.webm" autoplay loop playsinline></video>
+""")
+	_shortcut("theater.url", "theater.html")
+	_page("theater.html", "The Starlight Cinema", """<p>Welcome to the cinema. The big screen is a <b>web surface</b>
+declared in the world: a page with an HTML5 &lt;video&gt;, stretched across eight
+wall tiles, its sound coming from the screen.</p>
+<p>The glowing marquee on the left wall is made by the world's script
+(<code>scripts/theater.js</code>) out of inline HTML5 and a &lt;canvas&gt;. The
+script and the marquee talk to each other.</p>
+<p class="note">Click the screen to pause or play (it's a real page). The portal by the
+exit leads back to the courtyard.</p>""")
+	_write_text("scripts/theater.js", """// The Starlight Cinema: a scripted HTML5 marquee on the west wall.
+const MARQUEE = `<!doctype html>
+<style>html, body { margin: 0; height: 100%; background: #12040a; overflow: hidden; }
+canvas { width: 100%; height: 100%; display: block; }</style>
+<canvas id="c" width="512" height="256"></canvas>
+<script>
+const c = document.getElementById("c"), g = c.getContext("2d");
+let text = "NOW SHOWING", t = 0;
+qborg.onMessage((m) => { text = String(m); });   // from borg.postToSurface
+(function frame() {
+  t += 1;
+  g.fillStyle = "#12040a"; g.fillRect(0, 0, 512, 256);
+  for (let i = 0; i < 28; i++) {                    // chasing marquee bulbs
+    const on = (i + (t >> 3)) % 3 === 0;
+    g.fillStyle = on ? "#ffd23f" : "#5a3a10";
+    const x = 16 + (i % 14) * 34, y = i < 14 ? 14 : 232;
+    g.beginPath(); g.arc(x, y, 7, 0, 7); g.fill();
+  }
+  g.fillStyle = "#ff5a7a"; g.font = "bold 44px sans-serif"; g.textAlign = "center";
+  g.fillText(text, 256, 140 + Math.sin(t / 20) * 6);
+  requestAnimationFrame(frame);
+})();
+qborg.send("ready");                                 // to borg.on("surfaceMessage")
+<\\/script>`;
+
+borg.on("load", () => {
+  borg.setSurface("marquee", {
+    html: MARQUEE, kind: "wall", face: "e", x: 0, y: 3, len: 4, z: 300, h: 400,
+  });
+});
+
+// Trigger 1 is painted on the start tile: greet whoever stands there.
+let greeting = false;
+const show = () => borg.postToSurface("marquee", greeting ? "ENJOY THE SHOW!" : "NOW SHOWING");
+
+// The marquee page says "ready" once loaded; messages sent before then would
+// be lost, so (re)send the current text.
+borg.on("surfaceMessage", ({ id, data }) => {
+  if (id === "marquee" && data === "ready") {
+    borg.log("marquee is up");
+    show();
+  }
+});
+
+borg.on("enter", ({ id }) => { if (id === 1) { greeting = true; show(); } });
+borg.on("leave", ({ id }) => { if (id === 1) { greeting = false; show(); } });
+""")
+	_finish(level, "theater.borg", _nav(level, 9), "theater.emb")

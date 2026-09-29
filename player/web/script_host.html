@@ -50,6 +50,14 @@
       if (!keepOriginal) borg.setTile(layer, fromX, fromY, layer === "flr" || layer === "cei" ? 255 : 0);
     },
 
+    // Web surfaces: a page, video or .swf across wall faces or floor/ceiling.
+    // def: {url, kind: "wall"|"floor"|"ceiling", face: "n"|"s"|"e"|"w",
+    //       x, y, len (wall), w, d (floor/ceiling), z, h (wall, pixels)}
+    setSurface: function (id, def) { send({ type: "setSurface", id: String(id), def: def || {} }); },
+    removeSurface: function (id) { send({ type: "removeSurface", id: String(id) }); },
+    // Talk to a surface's page (it listens with qborg.onMessage).
+    postToSurface: function (id, data) { send({ type: "postToSurface", id: String(id), data: data }); },
+
     teleport: function (x, y, yaw) { send({ type: "teleport", x: +x, y: +y, yaw: yaw === undefined ? null : +yaw }); },
     go: function (url) { send({ type: "go", url: String(url) }); },
     showPage: function (url) { send({ type: "showPage", url: String(url) }); },
@@ -83,6 +91,9 @@
           }
         });
         emit("load", world);
+        break;
+      case "surfaceMessage":  // a surface page's qborg.send(data)
+        emit("surfaceMessage", { id: msg.id, data: msg.data });
         break;
       case "tiles":  // Godot-side edits (page MoveTile etc.)
         layers[msg.layer] = msg.grid;

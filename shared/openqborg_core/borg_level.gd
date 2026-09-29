@@ -306,8 +306,12 @@ static func parse(text: String) -> BorgLevel:
 				for entry in child.children:
 					var items := []
 					for item in entry.children:
+						# Attributes other than HREF are kept (surface placement, and
+						# anything unknown, so saving stays lossless).
+						var extra: Dictionary = item.attrs.duplicate()
+						extra.erase("HREF")
 						items.append({"kind": item.name, "href": item.attrs.get("HREF", ""),
-								"text": item.text})
+								"text": item.text, "attrs": extra})
 					level.ext.append({"tag": entry.name, "attrs": entry.attrs.duplicate(),
 							"items": items})
 	return level
@@ -418,11 +422,12 @@ func serialize() -> String:
 		s.append("<%s%s>" % [entry.tag, _attr_string(entry.attrs)])
 		for item in entry.items:
 			var indent := "" if entry.tag == "bdp" else "\t"
+			var more := _attr_string(item.get("attrs", {}))
 			if item.text.strip_edges().is_empty():
-				s.append('%s<%s HREF="%s"/>' % [indent, item.kind, BorgXml.escape(item.href)])
+				s.append('%s<%s HREF="%s"%s/>' % [indent, item.kind, BorgXml.escape(item.href), more])
 			else:
-				s.append('%s<%s HREF="%s">%s</%s>' % [indent, item.kind,
-						BorgXml.escape(item.href), BorgXml.escape(item.text), item.kind])
+				s.append('%s<%s HREF="%s"%s>%s</%s>' % [indent, item.kind,
+						BorgXml.escape(item.href), more, BorgXml.escape(item.text), item.kind])
 		s.append("</%s>" % entry.tag)
 	s.append("</ext>")
 	s.append("</brg>")
@@ -452,3 +457,54 @@ static func hex_to_int(s: String) -> int:
 static func hex_to_signed(s: String) -> int:
 	var v := hex_to_int(s) & 0xffffffff
 	return v - 0x100000000 if v >= 0x80000000 else v
+
+
+# --- Web surfaces (OpenQBORG extension) ---------------------------------------------
+#
+#   <ext><srf>
+#     <file HREF="https://..." ID="screen" KIND="wall" FACE="s" X="3" Y="0" LEN="8" Z="16" H="400"/>
+#     <file HREF="page.html" KIND="floor" X="2" Y="2" W="4" D="3"/>
+#   </srf></ext>
+#
+# A surface shows a web page, video or SWF across a run of wall faces (KIND
+# wall: FACE n/s/e/w of tiles X,Y.. running LEN tiles east (n/s) or south
+# (e/w), Z..Z+H pixels up) or a rectangle of floor/ceiling (X,Y, W x D tiles).
+
+const SURFACE_KINDS := ["wall", "floor", "ceiling"]
+
+
+## Surface definitions: [{id, url, kind, face, x, y, len, w, d, z, h}].
+func surfaces() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var entry := find_ext("srf")
+	if entry.is_empty():
+		return out
+	var n := 0
+	for item in entry.items:
+		if item.kind != "file":
+			continue
+		var a: Dictionary = item.get("attrs", {})
+		n += 1
+		out.append({"id": str(a.get("ID", "surface%d" % n)), "url": item.href,
+				"kind": str(a.get("KIND", "wall")).to_lower(), "face": str(a.get("FACE", "s")).to_lower(),
+				"x": int(a.get("X", 0)), "y": int(a.get("Y", 0)), "len": maxi(1, int(a.get("LEN", 1))),
+				"w": maxi(1, int(a.get("W", 1))), "d": maxi(1, int(a.get("D", 1))),
+				"z": int(a.get("Z", 0)), "h": maxi(16, int(a.get("H", 256)))})
+	return out
+
+
+func set_surfaces(defs: Array) -> void:
+	if defs.is_empty():
+		var existing := find_ext("srf")
+		if not existing.is_empty():
+			ext.erase(existing)
+		return
+	var entry := ensure_ext("srf")
+	entry.items = []
+	for d in defs:
+		var a := {"ID": d.id, "KIND": d.kind}
+		if d.kind == "wall":
+			a.merge({"FACE": d.face, "X": d.x, "Y": d.y, "LEN": d.len, "Z": d.z, "H": d.h})
+		else:
+			a.merge({"X": d.x, "Y": d.y, "W": d.w, "D": d.d})
+		entry.items.append({"kind": "file", "href": d.url, "text": "", "attrs": a})

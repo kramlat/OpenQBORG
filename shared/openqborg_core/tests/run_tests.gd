@@ -150,6 +150,12 @@ func _test_sized_world() -> void:
 	check(again.get_cell("flr", 39, 0) == 3 and again.get_cell("flr", 0, 23) == 4, "sized floor corners")
 	check(again.get_cell("obj", 39, 23) == 7, "sized object corner")
 	check(again.get_cell("js", 12, 20) == 2, "js trigger layer")
+	level.set_surfaces([{"id": "screen", "url": "https://example.org/v", "kind": "wall", "face": "s",
+			"x": 3, "y": 0, "len": 8, "w": 1, "d": 1, "z": 16, "h": 400}])
+	var with_srf := BorgLevel.parse(level.serialize())
+	var srf := with_srf.surfaces()
+	check(srf.size() == 1 and srf[0].len == 8 and srf[0].face == "s" and srf[0].h == 400 and srf[0].url == "https://example.org/v",
+			"web surface survives a round trip")
 	check(again.start_tile_position().distance_to(Vector2(30.5, 20.25)) < 0.02, "sized start pos")
 	for name in level.layers:
 		check(again.layers[name] == level.layers[name], "sized layer %s round trip" % name)

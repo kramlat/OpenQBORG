@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<brg VER="3.0" BS="000000">
+	<rdf:RDF xmlns:rdf="http://w3.org/TR/1999/PR-rdf-syntax-19990105#"
+	         xmlns:dc="http://purl.org/metadata/dublin_core#">
+	<rdf:Description>
+		<dc:Title> The Starlight Cinema </dc:Title>
+		<dc:Description> OpenQBORG example: web surfaces (a film screen and a scripted HTML5 marquee) </dc:Description>
+		<dc:Date> 2026-09-29 </dc:Date>
+		<dc:Type> QBORG </dc:Type>
+		<dc:Rights> OpenQBORG examples, GPL-3.0-or-later </dc:Rights>
+	</rdf:Description>
+	</rdf:RDF>
+
+<gen TP="fffffffe" SP="96" HT="ff" APP="3" MFG="cb">
+	<pos> 1e0 60 14 c00 </pos>
+</gen>
+<map RL="10">
+	<wal> 1105 e00 205 e00 205 e00 205 e00 205 100 c01 100 205 e00 205 100 c01 100 205 e00 205 100 c01 100 205 e00 205 100 c01 100 205 100 101 a00 101 100 205 e00 205 e00 1105 </wal>
+	<hgt> 11ff e00 2ff e00 2ff e00 2ff e00 2ff e00 2ff e00 2ff e00 2ff e00 2ff e00 2ff e00 2ff e00 2ff e00 2ff e00 2ff e00 11ff </hgt>
+	<flr> d107 105 2e07 </flr>
+	<cei> 10004 </cei>
+	<obj> 1d00 102 3400 c01 1400 c01 1400 c01 1400 c01 400 103 a00 103 3200 </obj>
+	<gtw> 1d00 101 e200 </gtw>
+	<gtw2> 10000 </gtw2>
+	<ent> 10000 </ent>
+	<wav> 10000 </wav>
+	<mid> 10000 </mid>
+	<lnk> 10000 </lnk>
+	<lnk2> 10000 </lnk2>
+	<js> 1700 101 e800 </js>
+</map>
+<ext>
+<flr>
+	<cfil HREF="starter-anim.flr">0 10000 20000 30000 40000 50000 60000 70000 80000 90000 a0000 </cfil>
+</flr>
+<cei>
+	<cfil HREF="starter.cei">0 10000 20000 30000 40000 50000 60000 </cfil>
+</cei>
+<wal>
+	<cfil HREF="starter-anim.wal">0 40000 80000 c0000 100000 140000 180000 </cfil>
+</wal>
+<nav>
+	<file HREF="theater.nav"/>
+</nav>
+<emb>
+	<file HREF="theater.emb"/>
+</emb>
+<bdp BC="0a0605" POS="0"/>
+<spr>
+	<file HREF="seat.sprite"/>
+	<file HREF="portal.sprite"/>
+	<file HREF="lamp.sprite"/>
+</spr>
+<gtw>
+	<file HREF="hello"/>
+</gtw>
+<gtw3>
+	<file HREF="theater.url"/>
+</gtw3>
+<js>
+	<file HREF="theater.js"/>
+</js>
+<srf>
+	<file HREF="html/film.html" ID="screen" KIND="wall" FACE="s" X="4" Y="0" LEN="8" Z="140" H="870"/>
+</srf>
+</ext>
+</brg>

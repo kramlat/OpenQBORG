@@ -27,6 +27,11 @@ var _fallback_label: Label
 var _fallback_button: Button
 
 
+## The bridge script, told where Ruffle is (for Flash in pages).
+static func preload_source() -> String:
+	return "window.__OQB_RUFFLE = %s;\n" % JSON.stringify(ruffle_base) + FileAccess.get_file_as_string(BRIDGE_SCRIPT)
+
+
 static func cef_available() -> bool:
 	return ClassDB.class_exists("CefTexture")
 
@@ -36,9 +41,7 @@ func _ready() -> void:
 		_cef = ClassDB.instantiate("CefTexture")
 		_cef.set("popup_policy", 2) # SIGNAL_ONLY: we decide where popups go
 		_cef.set("background_color", Color.WHITE)
-		# The bridge script, told where Ruffle is (for Flash in pages).
-		_cef.set("preload_script", "window.__OQB_RUFFLE = %s;\n" % JSON.stringify(ruffle_base)
-				+ FileAccess.get_file_as_string(BRIDGE_SCRIPT))
+		_cef.set("preload_script", preload_source())
 		_cef.set("url", "about:blank")
 		_cef.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_cef.size_flags_vertical = Control.SIZE_EXPAND_FILL

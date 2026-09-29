@@ -62,6 +62,18 @@ Layers use the `.borg` names: `wal`, `hgt`, `flr`, `cei`, `obj`, `gtw`,
 
 ### Player and pages
 
+* `borg.setSurface(id, def)`: show a web page, video or `.swf` on a surface
+  that can span many tiles. `def` is `{url, kind, face, x, y, len, z, h}` for
+  walls (`kind: "wall"`, `face` `"n"`/`"s"`/`"e"`/`"w"`, `len` tiles long, `z`
+  and `h` in pixels) or `{url, kind: "floor"|"ceiling", x, y, w, d}`. The same
+  `id` replaces it; relative URLs are relative to the world.
+* Script-made screens: pass `html: "<!doctype html>..."` instead of `url` to
+  show your own HTML5 (canvas, animation, a scoreboard). Relative links in it
+  resolve against the world.
+* `borg.postToSurface(id, data)`: send data to a surface's page, which
+  receives it with `qborg.onMessage(fn)`. A page sends back with
+  `qborg.send(data)`, arriving as `borg.on("surfaceMessage", ({id, data}) => ...)`.
+* `borg.removeSurface(id)`
 * `borg.teleport(x, y[, yaw])`
 * `borg.go(url)`: go to another world (relative to this one, or `borg://`/`borgs://`)
 * `borg.showPage(url)`: show a page in place of the 3D view

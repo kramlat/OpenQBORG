@@ -186,3 +186,25 @@ keeps 64 units per tile, so it simply grows past 1024.
 ```
 
 See [SCRIPTING.md](SCRIPTING.md) for the API.
+
+## Web surfaces: `<srf>`
+
+```xml
+<ext>
+  <srf>
+    <file HREF="html/film.html" ID="screen" KIND="wall" FACE="s" X="4" Y="0" LEN="8" Z="140" H="870"/>
+    <file HREF="art/loop.swf" ID="mural" KIND="floor" X="2" Y="5" W="3" D="2"/>
+  </srf>
+</ext>
+```
+
+A surface shows a web page, a video page or an `.swf` (through Ruffle) on
+the world's geometry, spanning as many tiles as needed — enough for a cinema
+screen. `KIND="wall"` covers `LEN` tiles starting at `X`,`Y` on the tile side
+`FACE` (`n`/`s`/`e`/`w`; north and south faces run east, east and west faces
+run south), from `Z` to `Z+H` pixels up. `KIND="floor"` or `"ceiling"`
+covers a `W`×`D` tile rectangle. Numbers are decimal. `HREF` may be relative
+to the world. The player renders pages live (with positional sound, and
+clicks passed to the page); other software can ignore the element. World
+scripts can add surfaces too, including ones made from inline HTML5 — see
+[SCRIPTING.md](SCRIPTING.md).
