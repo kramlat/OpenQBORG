@@ -550,3 +550,41 @@ func move_tile(script_layer: String, from: Vector2i, to: Vector2i, keep_original
 		level.set_cell(layer, from.x, from.y, empty)
 	rebuild()
 	return true
+
+
+# --- Previews (editor palettes) --------------------------------------------------
+
+## The 256x256 image of floor ("flr") or ceiling ("cei") tile `index`
+## (first frame when animated), or null.
+func surface_tile_image(tag: String, index: int) -> Image:
+	var frames: BorgFrames = _floor_frames if tag == "flr" else _ceiling_frames
+	var offsets: PackedInt64Array = level.ext_cfil(tag).get("offsets", PackedInt64Array())
+	if frames == null or index < 0 or index >= offsets.size():
+		return null
+	var img := frames.first()
+	var x := int(offsets[index] % img.get_width())
+	var y := int(offsets[index] / img.get_width())
+	var region := Rect2i(x, y, mini(256, img.get_width() - x), mini(256, img.get_height() - y))
+	return img.get_region(region) if region.size.x > 0 and region.size.y > 0 else null
+
+
+## The top 256x256 of wall strip `index` (0-based), upright as on a wall.
+func wall_strip_image(index: int) -> Image:
+	if _wall_frames == null or index < 0 or index >= _wall_strips.size():
+		return null
+	var strip: Dictionary = _wall_strips[index]
+	var img := _wall_frames.first()
+	var region := Rect2i(strip.x, strip.y, mini(256, img.get_width() - strip.x), mini(256, img.get_height() - strip.y))
+	if region.size.x <= 0 or region.size.y <= 0:
+		return null
+	var face := img.get_region(region)
+	face.rotate_90(CLOCKWISE)
+	return face
+
+
+## First frame of sprite `index` (0-based, as listed in <spr>), or null.
+func sprite_image(index: int) -> Image:
+	if index < 0 or index >= _sprites.size() or _sprites[index] == null:
+		return null
+	var s: CWSprite = _sprites[index]
+	return s.image.get_region(Rect2i(0, 0, s.image.get_width(), mini(s.image.get_height(), s.cell_height)))

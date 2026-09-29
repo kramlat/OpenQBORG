@@ -57,12 +57,16 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
 **Editor**
 * Live 3D viewport using the same renderer as the player: orbit, pan, zoom,
   paint any layer, Ctrl+click to pick a value, and a walk-through preview.
+* **Picture palettes**: the Floor, Ceiling, wall-texture and Objects layers show
+  the world's own tiles, strips and sprites as a grid of previews (names on
+  hover), and the Resources list previews sprites too.
 * Colour overlays for the invisible layers (no-walk, links, sounds, music,
   script triggers), undo/redo, and world properties.
 * Resource lists (sprites, links, sounds, music, scripts, nav map, emblem),
   texture references with automatic tile detection, and MIDI preview.
-* **Starter library** (Library tab): 13 sprites, 11 floor tiles and 7 wall strips (each in a still set
-  and an animated GIF set with moving water, lava and a waterfall), a sky backdrop, 6 sound loops, 3 music tracks, and page and script
+* **Starter library** (Library tab): 13 sprites, 11 floor tiles, 7 ceiling tiles and 7 wall strips (floors and
+  walls in a still set and an animated GIF set with moving water, lava and a
+  waterfall), a sky backdrop, 6 sound loops, 3 music tracks, and page and script
   templates, all original and free to use. New worlds start furnished from it,
   and whatever a world uses is copied into the world's own folders when you
   save, so it stays self-contained.

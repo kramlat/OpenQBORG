@@ -152,6 +152,7 @@ func _build_left_dock() -> Control:
 	dock.add_child(_heading("Value"))
 	_value_spin = SpinBox.new()
 	_value_spin.max_value = 255
+	_value_spin.value_changed.connect(_sync_palette_selection)
 	dock.add_child(_value_spin)
 	_value_list = ItemList.new()
 	_value_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -349,6 +350,12 @@ func new_level() -> void:
 
 
 func open_file(p: String) -> void:
+	# Asset URLs are built from the path, so make it absolute.
+	if p.begins_with("~"):
+		p = OS.get_environment("HOME") + p.substr(1)
+	elif p.is_relative_path():
+		p = OS.get_environment("PWD").path_join(p)
+	p = p.simplify_path()
 	var l := BorgLevel.load_file(p)
 	if l == null:
 		_status.text = "Could not open " + p
@@ -429,6 +436,7 @@ func _reload_world() -> void:
 	_overlay.set_grid(level.width, level.height)
 	_refresh_overlay()
 	_refresh_values()
+	_refresh_resources()
 	_building = false
 	if path.is_empty():
 		_status.text = "New world. Add things from the Library tab; what you use is copied next to the world when you save."
@@ -580,32 +588,53 @@ func _refresh_values() -> void:
 		return
 	_value_list.clear()
 	var layer := _current_layer()
+	# Picture layers get a grid of the world's own tiles, strips and sprites.
+	var grid := layer in ["flr", "cei", "wal", "obj"]
+	_value_list.max_columns = 0 if grid else 1
+	_value_list.icon_mode = ItemList.ICON_MODE_TOP if grid else ItemList.ICON_MODE_LEFT
+	_value_list.fixed_icon_size = Vector2i(PALETTE_ICON, PALETTE_ICON) if grid else Vector2i(16, 16)
+	_value_list.same_column_width = grid
+	_value_list.fixed_column_width = PALETTE_ICON + 8 if grid else 0
 	var add := func(label: String, value: int, icon: Texture2D = null):
 		var i := _value_list.add_item(label, icon)
 		_value_list.set_item_metadata(i, value)
+	# Grid cells show just the picture; the name is the tooltip.
+	var tile := func(tip: String, value: int, img: Image):
+		var i := _value_list.add_item("", _palette_thumb(img) if img != null else _none_icon())
+		_value_list.set_item_metadata(i, value)
+		_value_list.set_item_tooltip(i, tip)
 	match layer:
 		"@start":
 			_value_list.add_item("Click in the world to set the start")
 			_value_list.set_item_disabled(0, true)
 		"flr", "cei":
-			add.call("(none)", BorgLevel.EMPTY_SURFACE)
+			tile.call("No %s" % ("floor" if layer == "flr" else "ceiling"), BorgLevel.EMPTY_SURFACE, null)
 			var count: int = level.ext_cfil(layer).get("offsets", []).size()
+			var names := _surface_names(layer)
 			for i in count:
-				add.call("Tile %d" % i, i)
+				var tip: String = names[i] if i < names.size() else "Tile %d" % i
+				tile.call("%s (%d)" % [tip, i], i, world.surface_tile_image(layer, i) if world != null else null)
 		"wal":
-			add.call("(walkable)", 0)
+			tile.call("Walkable", 0, null)
 			var strips: int = level.ext_cfil("wal").get("offsets", []).size()
+			var names: Array = library.wall_names() if library.available() and library.uses_library_walls(level) else []
 			for i in maxi(1, strips):
-				add.call("Blocked / texture %d" % (i + 1), i + 1)
+				var tip: String = names[i] if i < names.size() else "Blocked / texture %d" % (i + 1)
+				var img := world.wall_strip_image(i) if world != null else null
+				if img == null:
+					img = Image.create(8, 8, false, Image.FORMAT_RGBA8)
+					img.fill(Color(0.45, 0.45, 0.5))
+				tile.call("%s (%d)" % [tip, i + 1], i + 1, img)
 		"hgt":
 			add.call("(flat)", 0)
 			for px in [64, 128, 256, 512, 1020]:
 				add.call("%d px" % px, px / 4)
 		"obj":
-			add.call("(none)", 0)
+			tile.call("No object", 0, null)
 			var sprites := level.ext_files("spr")
 			for i in sprites.size():
-				add.call("%d  %s" % [i + 1, sprites[i]], i + 1)
+				tile.call("%s (%d)" % [_sprite_name(sprites[i]), i + 1], i + 1,
+						world.sprite_image(i) if world != null else null)
 		"js":
 			add.call("(none)", 0)
 			for i in range(1, 17):
@@ -616,6 +645,65 @@ func _refresh_values() -> void:
 			for i in files.size():
 				add.call("%d  %s" % [i + 1, files[i]], i + 1, _swatch(TileOverlay.value_color(i + 1)))
 	_value_spin.value = _empty_value(layer) if layer != "wal" and layer != "hgt" else (1 if layer == "wal" else 64)
+	_sync_palette_selection(_value_spin.value)
+
+
+const PALETTE_ICON := 56
+
+
+## Highlights the palette entry for `value` (after picking or typing it).
+func _sync_palette_selection(value: float) -> void:
+	for i in _value_list.item_count:
+		if _value_list.get_item_metadata(i) == int(value):
+			_value_list.select(i)
+			_value_list.ensure_current_is_visible()
+			return
+	_value_list.deselect_all()
+
+
+func _surface_names(tag: String) -> Array:
+	if not library.available():
+		return []
+	if tag == "cei" and library.uses_library_ceilings(level):
+		return library.ceiling_names()
+	if library.uses_library_floors(level, tag):
+		return library.floor_names()
+	return []
+
+
+## A sprite's library name when it came from the library, else its file name.
+func _sprite_name(file: String) -> String:
+	for s in library.manifest.get("sprites", []):
+		if s.file == file:
+			return s.name
+	return file.get_basename()
+
+
+func _palette_thumb(img: Image) -> Texture2D:
+	var t := img.duplicate()
+	t.convert(Image.FORMAT_RGBA8)
+	var scale := float(PALETTE_ICON) / maxf(t.get_width(), t.get_height())
+	t.resize(maxi(1, int(t.get_width() * scale)), maxi(1, int(t.get_height() * scale)),
+			Image.INTERPOLATE_NEAREST if scale >= 1.0 else Image.INTERPOLATE_BILINEAR)
+	return ImageTexture.create_from_image(t)
+
+
+var _none_tex: Texture2D
+
+
+## "Nothing here": a checkerboard crossed out in red.
+func _none_icon() -> Texture2D:
+	if _none_tex == null:
+		var img := Image.create(PALETTE_ICON, PALETTE_ICON, false, Image.FORMAT_RGBA8)
+		for y in PALETTE_ICON:
+			for x in PALETTE_ICON:
+				img.set_pixel(x, y, Color(0.35, 0.35, 0.38) if (x / 8 + y / 8) % 2 == 0 else Color(0.25, 0.25, 0.28))
+		for k in PALETTE_ICON:
+			for w in range(-1, 2):
+				img.set_pixel(clampi(k + w, 0, PALETTE_ICON - 1), k, Color(0.85, 0.25, 0.25))
+				img.set_pixel(clampi(PALETTE_ICON - 1 - k + w, 0, PALETTE_ICON - 1), k, Color(0.85, 0.25, 0.25))
+		_none_tex = ImageTexture.create_from_image(img)
+	return _none_tex
 
 
 static func _swatch(c: Color) -> Texture2D:
@@ -809,8 +897,15 @@ func _refresh_resources() -> void:
 	if level == null:
 		return
 	_res_list.clear()
-	for f in level.ext_files(_res_tag()):
-		_res_list.add_item(f)
+	_res_list.fixed_icon_size = Vector2i(32, 32)
+	var files := level.ext_files(_res_tag())
+	for i in files.size():
+		var icon: Texture2D = null
+		if _res_tag() == "spr" and world != null:
+			var img := world.sprite_image(i)
+			if img != null:
+				icon = _palette_thumb(img)
+		_res_list.add_item(files[i], icon)
 	_res_play.visible = _res_tag() == "mid"
 	_res_script.visible = _res_tag() == "js"
 
@@ -917,6 +1012,13 @@ func _maybe_screenshot() -> void:
 	var out := OS.get_environment("OPENQBORG_SCREENSHOT")
 	if out.is_empty():
 		return
+	var pick_layer := OS.get_environment("OPENQBORG_LAYER")
+	if not pick_layer.is_empty():
+		for i in LAYERS.size():
+			if LAYERS[i][0] == pick_layer:
+				_layer_list.select(i)
+		_refresh_values()
+		_refresh_overlay()
 	var tab := OS.get_environment("OPENQBORG_TAB")
 	if not tab.is_empty():
 		_center_tabs.current_tab = int(tab)
@@ -928,9 +1030,9 @@ func _maybe_screenshot() -> void:
 
 # --- Starter library ------------------------------------------------------------
 
-enum LibKind { SPRITES, FLOORS, WALLS, SOUNDS, MUSIC, BACKDROPS, TEMPLATES }
-const LIB_KINDS := ["Sprites", "Floor tiles", "Wall strips", "Sounds", "Music", "Backdrops",
-		"Page & script templates"]
+enum LibKind { SPRITES, FLOORS, WALLS, CEILINGS, SOUNDS, MUSIC, BACKDROPS, TEMPLATES }
+const LIB_KINDS := ["Sprites", "Floor tiles", "Wall strips", "Ceiling tiles", "Sounds", "Music",
+		"Backdrops", "Page & script templates"]
 
 var _lib_kind: OptionButton
 var _lib_list: ItemList
@@ -1006,6 +1108,10 @@ func _refresh_library() -> void:
 			var names := library.wall_names()
 			for i in names.size():
 				add.call(names[i], library.wall_thumb(i), {"index": i, "name": names[i]})
+		LibKind.CEILINGS:
+			var names := library.ceiling_names()
+			for i in names.size():
+				add.call(names[i], library.ceiling_thumb(i), {"index": i, "name": names[i]})
 		LibKind.SOUNDS:
 			for s in library.manifest.get("sounds", []):
 				add.call("%s\n%s" % [s.name, s.file.get_extension().to_upper()], null, s)
@@ -1034,6 +1140,8 @@ func _lib_describe(i: int) -> void:
 			_lib_info.text = "%s. Selects the Floor layer with this tile; the world switches to the library's floor tiles if it used others." % m.name
 		LibKind.WALLS:
 			_lib_info.text = "%s. Selects No-walk / wall texture with this strip. Give the tiles a Wall height to raise them." % m.name
+		LibKind.CEILINGS:
+			_lib_info.text = "%s. Selects the Ceiling layer with this tile; the world switches to the library's ceiling tiles if it used others. Ceilings hang at the world's ceiling height." % m.name
 		LibKind.SOUNDS:
 			_lib_info.text = "%s: a looping sound tile. Selects the Sounds layer to paint where it plays." % m.name
 		LibKind.MUSIC:
@@ -1064,6 +1172,10 @@ func _lib_use(i: int) -> void:
 				if not library.uses_library_walls(level):
 					library.use_walls(level)
 				_select_paint("wal", m.index + 1)
+		LibKind.CEILINGS:
+			if not library.uses_library_ceilings(level):
+				library.use_ceilings(level)
+			_select_paint("cei", m.index)
 		LibKind.SOUNDS:
 			_select_paint("wav", _ensure_ext_file("wav", m.file))
 		LibKind.MUSIC:

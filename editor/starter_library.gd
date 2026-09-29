@@ -57,6 +57,23 @@ func wall_names() -> Array:
 	return manifest.get("walls", {}).get("strips", [])
 
 
+func ceiling_names() -> Array:
+	return manifest.get("ceilings", {}).get("tiles", [])
+
+
+## Points `level`'s ceiling at the library's ceiling tiles (beams, plaster,
+## vaults, starry night, ...).
+func use_ceilings(level: BorgLevel) -> void:
+	var offsets := PackedInt64Array()
+	for i in ceiling_names().size():
+		offsets.append(i * 256 * 256)
+	level.set_ext_cfil("cei", manifest.ceilings.file, offsets)
+
+
+func uses_library_ceilings(level: BorgLevel) -> bool:
+	return level.ext_cfil("cei").get("href", "") == manifest.get("ceilings", {}).get("file", "?")
+
+
 ## Points `level` at the library's floor tiles (all of them), the still JPEG
 ## set or the animated GIF set (same tiles, water/pad/lava moving).
 func use_floors(level: BorgLevel, tag := "flr", animated := false) -> void:
@@ -168,6 +185,14 @@ func floor_thumb(index: int) -> Texture2D:
 	var key := "flr:%d" % index
 	if not _thumbs.has(key):
 		var img := BorgWorld.decode_image(FileAccess.get_file_as_bytes(path("domains", manifest.floors.file)))
+		_thumbs[key] = _fit(img.get_region(Rect2i(0, index * 256, 256, 256))) if img != null else null
+	return _thumbs[key]
+
+
+func ceiling_thumb(index: int) -> Texture2D:
+	var key := "cei:%d" % index
+	if not _thumbs.has(key):
+		var img := BorgWorld.decode_image(FileAccess.get_file_as_bytes(path("domains", manifest.ceilings.file)))
 		_thumbs[key] = _fit(img.get_region(Rect2i(0, index * 256, 256, 256))) if img != null else null
 	return _thumbs[key]
 

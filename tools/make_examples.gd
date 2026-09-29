@@ -21,6 +21,10 @@ const FLOOR_NAMES := ["Grass", "Cobblestone path", "Water", "Stone floor", "Meta
 ## Wall strips in starter.wal; a wall tile's `wal` value is strip + 1.
 enum Wall { BRICK = 1, HEDGE, STONE, GATE, WOOD, MARBLE, WATERFALL }
 const WALL_NAMES := ["Brick", "Hedge", "Stone blocks", "Iron gate", "Wooden planks", "Marble", "Waterfall"]
+## Ceiling tiles in starter.cei, by index.
+enum Ceiling { BEAMS, PLASTER, VAULT, CAVE, STARS, STAINED_GLASS, ORNATE }
+const CEILING_NAMES := ["Wooden beams", "Plaster", "Stone vault", "Cave rock", "Starry night",
+		"Stained glass", "Ornate tiles"]
 ## Frames and frame time of the animated texture sets.
 const ANIM_FRAMES := 8
 const ANIM_MS := 125
@@ -85,6 +89,7 @@ static func _copy_dir(from: String, to: String) -> void:
 
 func _write_manifest() -> void:
 	manifest["floors"] = {"file": "starter.flr", "animated": "starter-anim.flr", "tiles": FLOOR_NAMES}
+	manifest["ceilings"] = {"file": "starter.cei", "tiles": CEILING_NAMES}
 	manifest["walls"] = {"file": "starter.wal", "animated": "starter-anim.wal", "strips": WALL_NAMES}
 	manifest["backdrops"] = [{"file": "starter-sky.bck", "name": "Mountain sky", "color": "c98f2a", "pos": 14}]
 	manifest["pages"] = [{"file": "page-template.html", "name": "Page template"},
@@ -344,7 +349,82 @@ func _make_textures() -> void:
 		wal_frames.append(_stack(frame_faces, true))
 	_write_animation("domains/starter-anim.wal", wal_frames)
 
+	_write("domains/starter.cei", _stack(_ceiling_tiles(), false).save_jpg_to_buffer(0.9))
 	_write("domains/starter-sky.bck", _panorama().save_jpg_to_buffer(0.9))
+
+
+## Ceiling tiles, seen from below (Ceiling enum order).
+func _ceiling_tiles() -> Array[Image]:
+	var out_tiles: Array[Image] = []
+	# Wooden beams: dark boards crossed by two heavy beams.
+	var beams := _noise_tile(30, 0.03, Color("#3b2412"), Color("#6b4423"))
+	for y in TILE:
+		for x in TILE:
+			if y % 32 < 2:
+				beams.set_pixel(x, y, Color("#24160a"))
+	for bx in [40, 168]:
+		beams.fill_rect(Rect2i(bx, 0, 48, TILE), Color("#5a3a1e"))
+		beams.fill_rect(Rect2i(bx, 0, 4, TILE), Color("#2e1c0c"))
+		beams.fill_rect(Rect2i(bx + 44, 0, 4, TILE), Color("#2e1c0c"))
+	out_tiles.append(beams)
+	# Plaster: warm white with hairline cracks.
+	var plaster := _noise_tile(31, 0.04, Color("#d9d2c3"), Color("#f4efe4"))
+	var cracks := _noise(32, 0.01)
+	for y in TILE:
+		for x in TILE:
+			if absf(cracks.get_noise_2d(x, y)) < 0.012:
+				plaster.set_pixel(x, y, Color("#a79f90"))
+	out_tiles.append(plaster)
+	# Stone vault: blocks with diagonal ribs meeting in a boss.
+	var vault := _noise_tile(33, 0.06, Color("#4e4e56"), Color("#7a7a84"))
+	_masonry(vault, Vector2i(64, 64), 32, Color("#2c2c30"), 3)
+	for k in TILE:
+		for w in range(-6, 7):
+			vault.set_pixel(clampi(k + w, 0, TILE - 1), k, Color("#9a9aa4"))
+			vault.set_pixel(clampi(TILE - 1 - k + w, 0, TILE - 1), k, Color("#9a9aa4"))
+	_fill_circle(vault, Vector2(128, 128), 18, Color("#b8b8c2"))
+	_fill_circle(vault, Vector2(128, 128), 8, Color("#6e6e78"))
+	out_tiles.append(vault)
+	# Cave rock: dark lumpy stone.
+	var cave := _noise_tile(34, 0.05, Color("#1e1b18"), Color("#4a433c"))
+	var lumps := _noise(35, 0.02, FastNoiseLite.TYPE_CELLULAR).get_seamless_image(TILE, TILE)
+	for y in TILE:
+		for x in TILE:
+			cave.set_pixel(x, y, cave.get_pixel(x, y).darkened(0.5 * (1.0 - lumps.get_pixel(x, y).r)))
+	out_tiles.append(cave)
+	# Starry night: deep blue with stars (for open-roofed halls).
+	var stars := _noise_tile(36, 0.02, Color("#050816"), Color("#152050"))
+	var srng := RandomNumberGenerator.new()
+	srng.seed = 36
+	for i in 90:
+		var p := Vector2(srng.randf_range(2, TILE - 3), srng.randf_range(2, TILE - 3))
+		_fill_circle(stars, p, srng.randf_range(0.6, 1.8), Color(1, 1, 0.9).lerp(Color("#9fc4ff"), srng.randf()))
+	out_tiles.append(stars)
+	# Stained glass: bright cells in dark lead.
+	var glass := Image.create(TILE, TILE, false, Image.FORMAT_RGB8)
+	var cell_noise := _noise(37, 0.011, FastNoiseLite.TYPE_CELLULAR)
+	cell_noise.fractal_type = FastNoiseLite.FRACTAL_NONE
+	cell_noise.cellular_return_type = FastNoiseLite.RETURN_CELL_VALUE
+	var edge_noise := _noise(37, 0.011, FastNoiseLite.TYPE_CELLULAR)
+	edge_noise.fractal_type = FastNoiseLite.FRACTAL_NONE
+	edge_noise.cellular_return_type = FastNoiseLite.RETURN_DISTANCE2_SUB
+	var cells := cell_noise.get_seamless_image(TILE, TILE)
+	var edges := edge_noise.get_seamless_image(TILE, TILE)
+	var palette := [Color("#c0392b"), Color("#2e86c1"), Color("#f1c40f"), Color("#27ae60"), Color("#8e44ad"), Color("#e67e22")]
+	for y in TILE:
+		for x in TILE:
+			var c: Color = palette[int(cells.get_pixel(x, y).r * 97.0) % palette.size()]
+			glass.set_pixel(x, y, Color("#1a1a1a") if edges.get_pixel(x, y).r < 0.16 else c.lightened(0.15))
+	out_tiles.append(glass)
+	# Ornate tiles: cream squares with gold rosettes.
+	var ornate := _noise_tile(38, 0.08, Color("#e8dcc0"), Color("#f6efdc"))
+	_masonry(ornate, Vector2i(64, 64), 0, Color("#9c7a3c"), 3)
+	for cy in range(32, TILE, 64):
+		for cx in range(32, TILE, 64):
+			_fill_circle(ornate, Vector2(cx, cy), 14, Color("#c9a24a"))
+			_fill_circle(ornate, Vector2(cx, cy), 7, Color("#7a1f1f"))
+	out_tiles.append(ornate)
+	return out_tiles
 
 
 ## A 1024x160 sky and mountain panorama that wraps horizontally.
@@ -1132,7 +1212,10 @@ func _make_puzzle() -> void:
 	var offsets := PackedInt64Array()
 	for i in Floor.size():
 		offsets.append(i * TILE * TILE)
-	level.set_ext_cfil("cei", "starter-anim.flr", offsets)
+	var cei_offsets := PackedInt64Array()
+	for i in Ceiling.size():
+		cei_offsets.append(i * TILE * TILE)
+	level.set_ext_cfil("cei", "starter.cei", cei_offsets)
 	level.set_ext_files("spr", PackedStringArray(["orb.sprite", "torch.sprite", "portal.sprite"]))
 	var rows := PackedStringArray([
 		"################",
@@ -1167,7 +1250,7 @@ func _make_puzzle() -> void:
 	var at := _paint(level, rows, legend)
 	for y in level.height:
 		for x in level.width:
-			level.set_cell("cei", x, y, Floor.STONE)
+			level.set_cell("cei", x, y, Ceiling.VAULT)
 			level.set_cell("mid", x, y, 1)
 	var start: Vector2i = at["S"][0]
 	level.set_start_tile_position(Vector2(start) + Vector2(0.5, 0.5))

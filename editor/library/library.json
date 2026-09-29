@@ -7,6 +7,18 @@
 			"pos": 14
 		}
 	],
+	"ceilings": {
+		"file": "starter.cei",
+		"tiles": [
+			"Wooden beams",
+			"Plaster",
+			"Stone vault",
+			"Cave rock",
+			"Starry night",
+			"Stained glass",
+			"Ornate tiles"
+		]
+	},
 	"floors": {
 		"animated": "starter-anim.flr",
 		"file": "starter.flr",
