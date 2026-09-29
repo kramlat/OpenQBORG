@@ -94,7 +94,9 @@ tools/install-desktop.sh --built  # .borg files (with their own icon) and borg:/
                                   # open in the built player
 ```
 
-`build-release.sh` needs Godot's export templates. If your distro installed
+`build-release.sh` uses `godot-mono` when it's installed (else `godot`; override
+with `GODOT=...`). Both editors work, since OpenQBORG has no C#. It needs the
+export templates for that editor. If your distro installed
 them system-wide (as Arch does), it links them into your user data folder.
 The copy ships the LGPL-only FFmpeg build next to the audio extension.
 Windows export presets are included, but a Windows build still needs the

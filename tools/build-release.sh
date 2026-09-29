@@ -11,7 +11,8 @@
 # Then: tools/install-desktop.sh --built  registers it for .borg/borg:// links.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GODOT="${GODOT:-$(command -v godot || command -v godot4)}"
+# Prefer the .NET (mono) editor when installed; it exports GDScript projects too.
+GODOT="${GODOT:-$(command -v godot-mono || command -v godot || command -v godot4)}"
 OUT="$ROOT/build/linux"
 
 [[ -d "$ROOT/player/addons/godot_cef/bin" ]] || { echo "godot-cef missing: tools/fetch-assets.sh cef" >&2; exit 1; }
@@ -22,7 +23,7 @@ fi
 
 # Distro packages (e.g. Arch) install templates system-wide, but Godot only
 # looks in the user data dir. Link them in when the user path is free.
-ver="$("$GODOT" --version | sed -E "s/^([0-9]+\.[0-9]+(\.[0-9]+)?\.[a-z0-9]+)\..*/\1/")"
+ver="$("$GODOT" --version | sed -E "s/^([0-9]+\.[0-9]+(\.[0-9]+)?\.[a-z0-9]+(\.mono)?)\..*/\1/")"
 user_tpl="${XDG_DATA_HOME:-$HOME/.local/share}/godot/export_templates/$ver"
 for sys_tpl in /usr/share/godot/export_templates/$ver /usr/local/share/godot/export_templates/$ver; do
 	if [[ ! -e "$user_tpl" && -f "$sys_tpl/linux_release.x86_64" ]]; then

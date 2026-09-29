@@ -11,7 +11,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
-GODOT="$(command -v godot || command -v godot4 || true)"
+GODOT="${GODOT:-$(command -v godot-mono || command -v godot || command -v godot4 || true)}"
 
 bin_dir="${1:-}"
 [[ "$bin_dir" == "--built" ]] && bin_dir="$ROOT/build/linux"
