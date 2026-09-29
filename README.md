@@ -22,8 +22,18 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
   3D, even when the server sends the `.borg` as a download. Only a world's own
   pages may change it through `window.external`.
 * A menu bar with **File** (open a .borg file, open an address, reload, back),
-  **Bookmarks** (seeded with the example worlds) and **Help**. The window
-  resizes freely, and the side pane is on a draggable splitter.
+  **Bookmarks** and **Help**. The window resizes freely, and the side pane is
+  on a draggable splitter.
+* **Bookmarks** come with the example worlds and with original CYBERWORLD
+  worlds that still survive online in the Internet Archive's Wayback Machine
+  (Zeta Quest 3D, complete; the CYBERWORLD Olympiad, partly archived). New
+  defaults reach existing bookmark files, and ones you remove stay removed.
+  Bookmarks are written as soon as they change, and again on exit if a save
+  failed.
+* Friendly to busy servers: failed downloads are retried with backoff
+  (honouring `Retry-After`), the Wayback Machine gets two connections at a
+  time, and archived files are cached on disk, so a world cut short by
+  throttling fills in on the next visit and revisits are instant.
 * CWS3 sprite behaviours: sprites that react to the mouse pointer, to clicks
   and to the player coming near, as authored in the original worlds.
 * Walls, floors, ceilings, animated and multi-sided sprites, sprites

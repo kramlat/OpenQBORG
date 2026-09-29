@@ -115,6 +115,10 @@ static func normalize(url: String) -> String:
 	var absolute := path.begins_with("/")
 	var out: PackedStringArray = []
 	for seg in path.split("/"):
+		# Keep "//" after an embedded scheme (Wayback: /web/2001id_/http://host/...).
+		if seg == "" and out.size() > 0 and out[out.size() - 1].ends_with(":"):
+			out.append("")
+			continue
 		if seg == "" or seg == ".":
 			continue
 		if seg == "..":

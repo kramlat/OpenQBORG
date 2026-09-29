@@ -15,6 +15,10 @@ signal address_changed(url: String)
 signal title_changed(title: String)
 
 const BRIDGE_SCRIPT := "res://web/borg_bridge.js"
+## Chromium network errors worth retrying (refused, reset, closed, timed out,
+## empty response): busy servers such as the Wayback Machine refuse bursts.
+const RETRY_ERRORS := [100, 101, 102, 7, 118, 324]
+const MAX_RETRIES := 3
 ## Where the player serves Ruffle; set before pages are created ("" = none).
 static var ruffle_base := ""
 
@@ -25,6 +29,7 @@ var _cef: Control
 var _audio: AudioStreamPlayer
 var _fallback_label: Label
 var _fallback_button: Button
+var _retries := 0
 
 
 ## The bridge script, told where Ruffle is (for Flash in pages).
@@ -79,6 +84,7 @@ func navigate(url: String) -> void:
 	if url == current_url:
 		return
 	current_url = url
+	_retries = 0
 	if _cef != null:
 		_cef.set("url", url)
 	else:
@@ -127,15 +133,31 @@ func _on_ipc_message(message: String) -> void:
 		page_request.emit(msg)
 
 
-func _on_load_finished(_url: String, _status: int) -> void:
+func _on_load_finished(url: String, status: int) -> void:
+	if status == 429 or status == 503:
+		_retry(url)
+		return
 	if not borg_location.is_empty():
 		_cef.call("eval", "window.external && (window.external.BorgLocation = %s);" % JSON.stringify(borg_location))
 
 
 # Fallbacks for borg:// navigations the bridge script didn't catch.
-func _on_load_error(url: String, _code: int, _text: String) -> void:
+func _on_load_error(url: String, code: int, _text: String) -> void:
 	if url.to_lower().begins_with("borg"):
 		page_request.emit({"type": "borg", "url": url, "base": current_url})
+	elif absi(code) in RETRY_ERRORS:
+		_retry(url)
+
+
+## Loads the page again after 1, 2, then 4 s, if it is still the one wanted.
+func _retry(url: String) -> void:
+	if url != current_url or _retries >= MAX_RETRIES:
+		return
+	var delay := pow(2.0, _retries)
+	_retries += 1
+	await get_tree().create_timer(delay).timeout
+	if url == current_url and _cef != null:
+		_cef.call("reload")
 
 
 func _on_load_started(url: String) -> void:

@@ -64,6 +64,10 @@ func _test_urls() -> void:
 	var c := BorgUrl.classify("borg://cmd.web@http://h/p/page.html")
 	check(c.kind == BorgUrl.Kind.COMMAND_WEB and c.url == "http://h/p/page.html", "cmd.web")
 	check(BorgUrl.classify("borg://cmd.prev").kind == BorgUrl.Kind.COMMAND_PREV, "cmd.prev")
+	var wb := "https://web.archive.org/web/2001id_/http://www2.warnerbros.com:80/zeta/borgs/"
+	check(BorgUrl.join(wb, "domains/../media/zeta.mid") == wb + "media/zeta.mid", "Wayback addresses keep their embedded http://")
+	check(BorgUrl.to_fetchable("borgs://web.archive.org/web/2001id_/http://h/a.borg") \
+			== "https://web.archive.org/web/2001id_/http://h/a.borg", "Wayback borgs:// -> https")
 
 
 func _test_empty_roundtrip() -> void:

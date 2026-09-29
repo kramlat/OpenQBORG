@@ -631,9 +631,20 @@ func _build_menu() -> MenuBar:
 	return bar
 
 
+## Quit (menu, Ctrl+Q), saving anything not yet on disk first.
+func _quit() -> void:
+	bookmarks.flush()
+	get_tree().quit()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		bookmarks.flush()
+
+
 func _refresh_bookmark_menu() -> void:
 	var m := _bookmark_menu
-	m.clear()
+	m.clear(true)
 	var marked := bookmarks.index_of(current_url) >= 0
 	m.add_item("Bookmark This World", MenuId.ADD_BOOKMARK)
 	m.set_item_accelerator(0, KEY_MASK_CTRL | KEY_D)
@@ -642,10 +653,23 @@ func _refresh_bookmark_menu() -> void:
 	m.set_item_disabled(1, not marked)
 	if not bookmarks.items.is_empty():
 		m.add_separator()
+	# Folders (the defaults) as submenus, then the user's own bookmarks.
+	for folder in bookmarks.folders():
+		if folder.is_empty():
+			continue
+		var sub := PopupMenu.new()
+		sub.id_pressed.connect(_on_menu)
+		_add_bookmark_items(sub, folder)
+		m.add_submenu_node_item(folder, sub)
+	_add_bookmark_items(m, "")
+
+
+func _add_bookmark_items(m: PopupMenu, folder: String) -> void:
 	for i in bookmarks.items.size():
 		var b: Dictionary = bookmarks.items[i]
-		m.add_item(b.title, MenuId.BOOKMARK_BASE + i)
-		m.set_item_tooltip(m.get_item_count() - 1, BorgUrl.to_display(b.url))
+		if b.folder == folder:
+			m.add_item(b.title, MenuId.BOOKMARK_BASE + i)
+			m.set_item_tooltip(m.get_item_count() - 1, BorgUrl.to_display(b.url))
 
 
 func _on_menu(id: int) -> void:
@@ -660,7 +684,7 @@ func _on_menu(id: int) -> void:
 		MenuId.BACK:
 			_on_back()
 		MenuId.QUIT:
-			get_tree().quit()
+			_quit()
 		MenuId.ADD_BOOKMARK:
 			if _browser.visible and not _browser.url().is_empty():
 				var page := pages.to_local(_browser.url())
