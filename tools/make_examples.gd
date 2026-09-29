@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 extends SceneTree
-## Generates the example worlds in examples/borgs/. Every texture, sprite,
-## sound, tune and page is made here from code, so the examples are original
-## and reproducible:
+## Generates the editor's starter library (editor/library/) and the example
+## worlds (examples/borgs/). Every texture, sprite, sound, tune and page is
+## made here from code, so all of it is original and reproducible:
 ##
 ##   godot --headless --path player --script ../tools/make_examples.gd
 ##
@@ -14,12 +14,20 @@ const TILE := 256
 const KEY := Color(1, 0, 1) # sprite colour key
 const RATE := 22050
 
-## Floor/ceiling tiles in examples.flr, by index.
-enum Floor { GRASS, PATH, WATER, STONE, PLATE, PAD, SAND }
-## Wall strips in examples.wal; a wall tile's `wal` value is strip + 1.
-enum Wall { BRICK = 1, HEDGE, STONE, GATE }
+## Floor/ceiling tiles in starter.flr, by index.
+enum Floor { GRASS, PATH, WATER, STONE, PLATE, PAD, SAND, PLANKS, SNOW, DIRT }
+const FLOOR_NAMES := ["Grass", "Cobblestone path", "Water", "Stone floor", "Metal plate",
+		"Glowing pad", "Sand", "Wooden planks", "Snow", "Dirt"]
+## Wall strips in starter.wal; a wall tile's `wal` value is strip + 1.
+enum Wall { BRICK = 1, HEDGE, STONE, GATE, WOOD, MARBLE }
+const WALL_NAMES := ["Brick", "Hedge", "Stone blocks", "Iron gate", "Wooden planks", "Marble"]
 
+## Where _write() puts files: the library first, then the examples.
 var out := ""
+var lib := ""
+var examples := ""
+## library.json, filled in as assets are made.
+var manifest := {"version": 1, "sprites": [], "sounds": [], "music": []}
 var have_ffmpeg := false
 var have_magick := false
 var rng := RandomNumberGenerator.new()
@@ -28,21 +36,58 @@ var audio_names := {}
 
 func _init() -> void:
 	var root := ProjectSettings.globalize_path("res://").path_join("..").simplify_path()
-	out = root.path_join("examples/borgs")
-	for d in ["domains", "objects", "media", "scripts", "html"]:
-		DirAccess.make_dir_recursive_absolute(out.path_join(d))
+	lib = root.path_join("editor/library")
+	examples = root.path_join("examples/borgs")
+	for base in [lib, examples]:
+		for d in ["domains", "objects", "media", "scripts", "html"]:
+			DirAccess.make_dir_recursive_absolute(base.path_join(d))
 	have_ffmpeg = _has("ffmpeg")
 	have_magick = _has("magick")
 	rng.seed = 2026
+
+	# 1. The starter library: generic assets any world can use.
+	out = lib
 	_make_textures()
 	_make_sprites()
 	_make_audio()
+	_make_library_pages()
+	_write_manifest()
+	# Godot must not import the library as project resources.
+	_write_text(".gdignore", "")
+
+	# 2. The example worlds: the library assets plus their own maps, emblems
+	# and pages, so each example folder is self-contained.
+	out = examples
+	for d in ["domains", "objects", "media"]:
+		_copy_dir(lib.path_join(d), examples.path_join(d))
+	for f in ["style.css", "qborg.js"]:
+		DirAccess.copy_absolute(lib.path_join("html").path_join(f), examples.path_join("html").path_join(f))
+	_make_emblem("hello.emb", "HELLO QBORG", Color("#1d4f8c"), Color("#3fa9f5"))
+	_make_emblem("sprawl.emb", "THE SPRAWL", Color("#8c5a1d"), Color("#f5c03f"))
+	_make_emblem("puzzle.emb", "ORB VAULT", Color("#3b1d8c"), Color("#a63ff5"))
 	_make_pages()
 	_make_hello()
 	_make_sprawl()
 	_make_puzzle()
-	print("Example worlds written to ", out)
+	print("Starter library written to ", lib)
+	print("Example worlds written to ", examples)
 	quit()
+
+
+static func _copy_dir(from: String, to: String) -> void:
+	DirAccess.make_dir_recursive_absolute(to)
+	for f in DirAccess.get_files_at(from):
+		DirAccess.copy_absolute(from.path_join(f), to.path_join(f))
+
+
+func _write_manifest() -> void:
+	manifest["floors"] = {"file": "starter.flr", "tiles": FLOOR_NAMES}
+	manifest["walls"] = {"file": "starter.wal", "strips": WALL_NAMES}
+	manifest["backdrops"] = [{"file": "starter-sky.bck", "name": "Mountain sky", "color": "c98f2a", "pos": 14}]
+	manifest["pages"] = [{"file": "page-template.html", "name": "Page template"},
+			{"file": "style.css", "name": "Page style sheet"}, {"file": "qborg.js", "name": "Page helpers (pushTo3D)"}]
+	manifest["scripts"] = [{"file": "template.js", "name": "World script template"}]
+	_write_text("library.json", JSON.stringify(manifest, "\t"))
 
 
 static func _has(cmd: String) -> bool:
@@ -151,10 +196,20 @@ func _make_textures() -> void:
 				pad.set_pixel(x, y, Color("#7fe3ff"))
 	tiles.append(pad)                                                                       # PAD
 	tiles.append(_noise_tile(8, 0.05, Color("#c9b47a"), Color("#efe0a8")))                  # SAND
+	var planks := _noise_tile(9, 0.02, Color("#6b4423"), Color("#a8743f"))
+	for y in TILE:
+		for x in TILE:
+			var board := y / 32
+			var seam := (x + board * 97) % 256
+			if y % 32 < 2 or seam < 2:
+				planks.set_pixel(x, y, Color("#3b2412"))
+	tiles.append(planks)                                                                    # PLANKS
+	tiles.append(_noise_tile(10, 0.06, Color("#c9d6e6"), Color("#ffffff")))                # SNOW
+	tiles.append(_noise_tile(11, 0.07, Color("#4a3322"), Color("#7a5a3a")))                # DIRT
 	var flr := Image.create(TILE, TILE * tiles.size(), false, Image.FORMAT_RGB8)
 	for i in tiles.size():
 		flr.blit_rect(tiles[i], Rect2i(0, 0, TILE, TILE), Vector2i(0, i * TILE))
-	_write("domains/examples.flr", flr.save_jpg_to_buffer(0.9))
+	_write("domains/starter.flr", flr.save_jpg_to_buffer(0.9))
 
 	# Wall faces are 256 wide and 1024 tall (top to bottom); the .wal file
 	# stores each one rotated a quarter turn into a 1024x256 strip.
@@ -175,17 +230,28 @@ func _make_textures() -> void:
 	for y in range(40, 1024, 160):
 		gate.fill_rect(Rect2i(0, y, 256, 12), Color("#5c5f66"))
 	faces.append(gate)
+	var wood := _noise_tile(15, 0.03, Color("#5a3a1e"), Color("#9a6a3a"), 256, 1024)
+	for y in 1024:
+		for x in 256:
+			if x % 32 < 3:
+				wood.set_pixel(x, y, Color("#2e1c0c"))
+	faces.append(wood)
+	var marble := _noise_tile(16, 0.02, Color("#d8d6d0"), Color("#fbfaf6"), 256, 1024)
+	var veins := _noise(17, 0.015)
+	for y in 1024:
+		for x in 256:
+			if absf(veins.get_noise_2d(x, y)) < 0.02:
+				marble.set_pixel(x, y, Color("#8f8a80"))
+	_masonry(marble, Vector2i(256, 256), 0, Color("#b8b4aa"), 2)
+	faces.append(marble)
 	var wal := Image.create(1024, 256 * faces.size(), false, Image.FORMAT_RGB8)
 	for i in faces.size():
 		var strip := faces[i].duplicate()
 		strip.rotate_90(COUNTERCLOCKWISE)
 		wal.blit_rect(strip, Rect2i(0, 0, 1024, 256), Vector2i(0, i * 256))
-	_write("domains/examples.wal", wal.save_jpg_to_buffer(0.9))
+	_write("domains/starter.wal", wal.save_jpg_to_buffer(0.9))
 
-	_write("domains/examples.bck", _panorama().save_jpg_to_buffer(0.9))
-	_make_emblem("hello.emb", "HELLO QBORG", Color("#1d4f8c"), Color("#3fa9f5"))
-	_make_emblem("sprawl.emb", "THE SPRAWL", Color("#8c5a1d"), Color("#f5c03f"))
-	_make_emblem("puzzle.emb", "ORB VAULT", Color("#3b1d8c"), Color("#a63ff5"))
+	_write("domains/starter-sky.bck", _panorama().save_jpg_to_buffer(0.9))
 
 
 ## A 1024x160 sky and mountain panorama that wraps horizontally.
@@ -213,7 +279,7 @@ func _panorama() -> Image:
 
 
 func _make_emblem(file: String, text: String, a: Color, b: Color) -> void:
-	var path := out.path_join("domains").path_join(file)
+	var path := examples.path_join("domains").path_join(file)
 	if have_magick:
 		var code := OS.execute("magick", ["-size", "256x72", "gradient:#%s-#%s" % [a.to_html(false), b.to_html(false)],
 				"-gravity", "center", "-pointsize", "30", "-fill", "white", "-stroke", "#00000060",
@@ -252,8 +318,13 @@ func _sprite(name: String, frames: Array[Image], world: Vector2i, z := 0, anim_m
 	return s
 
 
-func _save_sprite(name: String, s: CWSprite) -> void:
-	_write("objects/" + name, s.to_png_bytes())
+## Writes objects/<file> and lists it in library.json. `blocks`: the editor
+## also marks the tile unwalkable when placing it.
+func _save_sprite(file: String, s: CWSprite, title := "", category := "Objects", blocks := false) -> void:
+	_write("objects/" + file, s.to_png_bytes())
+	if out == lib:
+		manifest.sprites.append({"file": file, "name": title if not title.is_empty() else file.get_basename(),
+				"category": category, "blocks": blocks})
 
 
 static func _canvas(w: int, h: int) -> Image:
@@ -269,7 +340,7 @@ func _make_sprites() -> void:
 	for blob in [[Vector2(48, 60), 40, "#1f5c24"], [Vector2(30, 80), 26, "#27702c"],
 			[Vector2(66, 80), 26, "#27702c"], [Vector2(48, 44), 30, "#338a38"], [Vector2(40, 34), 14, "#4aa94c"]]:
 		_fill_circle(tree, blob[0], blob[1], Color(blob[2]))
-	_save_sprite("tree.sprite", _sprite("tree", [tree], Vector2i(192, 320)))
+	_save_sprite("tree.sprite", _sprite("tree", [tree], Vector2i(192, 320)), "Tree", "Nature", true)
 
 	# Torch: four flickering frames
 	var torch: Array[Image] = []
@@ -281,7 +352,7 @@ func _make_sprites() -> void:
 		_fill_ellipse(t, Vector2(16 + sway, 16), 8, 12 + f % 2 * 2, Color("#ff7a1a"))
 		_fill_ellipse(t, Vector2(16 + sway, 19), 4, 7, Color("#ffe066"))
 		torch.append(t)
-	_save_sprite("torch.sprite", _sprite("torch", torch, Vector2i(40, 100), 0, 120))
+	_save_sprite("torch.sprite", _sprite("torch", torch, Vector2i(40, 100), 0, 120), "Torch (animated)", "Lights")
 
 	# Fountain: three splash frames
 	var fountain: Array[Image] = []
@@ -296,7 +367,7 @@ func _make_sprites() -> void:
 			_fill_circle(t, Vector2(64 + cos(ang) * (18 + f * 6), 30 - sin(ang) * 6 + f * 4), 3, Color("#bfe7ff"))
 		_fill_ellipse(t, Vector2(64, 26 - f * 2), 5, 10, Color("#d8f2ff"))
 		fountain.append(t)
-	_save_sprite("fountain.sprite", _sprite("fountain", fountain, Vector2i(220, 190), 0, 180))
+	_save_sprite("fountain.sprite", _sprite("fountain", fountain, Vector2i(220, 190), 0, 180), "Fountain (animated)", "Features", true)
 
 	# Portal: six swirling frames
 	var portal: Array[Image] = []
@@ -309,7 +380,7 @@ func _make_sprites() -> void:
 				var r := k * 1.3
 				_fill_circle(t, Vector2(48 + cos(ang) * r, 72 + sin(ang) * r * 1.5), 3.5, Color("#b98cff").lerp(Color("#7fe3ff"), k / 30.0))
 		portal.append(t)
-	_save_sprite("portal.sprite", _sprite("portal", portal, Vector2i(160, 240), 0, 90))
+	_save_sprite("portal.sprite", _sprite("portal", portal, Vector2i(160, 240), 0, 90), "Portal (animated)", "Features")
 
 	# Signpost
 	var sign := _canvas(64, 72)
@@ -318,7 +389,7 @@ func _make_sprites() -> void:
 	sign.fill_rect(Rect2i(4, 6, 56, 3), Color("#8a6435"))
 	for y in [15, 22, 29]:
 		sign.fill_rect(Rect2i(12, y, 40, 2), Color("#5b3a1e"))
-	_save_sprite("sign.sprite", _sprite("sign", [sign], Vector2i(100, 112)))
+	_save_sprite("sign.sprite", _sprite("sign", [sign], Vector2i(100, 112)), "Signpost", "Features", true)
 
 	# Wall banner: only drawn on the south face of wall blocks.
 	var banner := _canvas(64, 128)
@@ -331,7 +402,7 @@ func _make_sprites() -> void:
 	banner.fill_rect(Rect2i(2, 0, 60, 6), Color("#c9a24a"))
 	var b := _sprite("banner", [banner], Vector2i(64, 128), 90)
 	b.on_south = true
-	_save_sprite("banner.sprite", b)
+	_save_sprite("banner.sprite", b, "Wall banner (on walls)", "Walls")
 
 	# Orb: four pulsing frames, floating
 	var orb: Array[Image] = []
@@ -342,7 +413,61 @@ func _make_sprites() -> void:
 		_fill_circle(t, Vector2(24, 24), r, Color("#a63ff5"))
 		_fill_circle(t, Vector2(19, 19), 5, Color("#f0dcff"))
 		orb.append(t)
-	_save_sprite("orb.sprite", _sprite("orb", orb, Vector2i(72, 72), 50, 150))
+	_save_sprite("orb.sprite", _sprite("orb", orb, Vector2i(72, 72), 50, 150), "Floating orb (animated)", "Features")
+
+	# Rock
+	var rock := _canvas(96, 64)
+	_fill_ellipse(rock, Vector2(48, 44), 44, 20, Color("#5f5f66"))
+	_fill_ellipse(rock, Vector2(40, 36), 30, 18, Color("#7c7c85"))
+	_fill_ellipse(rock, Vector2(34, 30), 12, 7, Color("#9a9aa3"))
+	_save_sprite("rock.sprite", _sprite("rock", [rock], Vector2i(150, 100)), "Rock", "Nature", true)
+
+	# Bush
+	var bush := _canvas(96, 64)
+	for blob in [[Vector2(28, 40), 22, "#1f5c24"], [Vector2(66, 40), 22, "#1f5c24"],
+			[Vector2(48, 30), 26, "#2d7a31"], [Vector2(40, 24), 10, "#4aa94c"]]:
+		_fill_circle(bush, blob[0], blob[1], Color(blob[2]))
+	_save_sprite("bush.sprite", _sprite("bush", [bush], Vector2i(150, 100)), "Bush", "Nature", true)
+
+	# Flowers
+	var flowers := _canvas(96, 40)
+	for i in 14:
+		var x := 6 + i * 6.3
+		flowers.fill_rect(Rect2i(int(x), 18, 2, 22), Color("#2d7a31"))
+		_fill_circle(flowers, Vector2(x + 1, 16 - (i % 3) * 3), 4,
+				[Color("#ff5a7a"), Color("#ffd23f"), Color("#b98cff"), Color("#ffffff")][i % 4])
+	_save_sprite("flowers.sprite", _sprite("flowers", [flowers], Vector2i(200, 84)), "Flowers", "Nature")
+
+	# Lamp post: two flicker frames
+	var lamp: Array[Image] = []
+	for f in 2:
+		var t := _canvas(40, 160)
+		t.fill_rect(Rect2i(17, 40, 6, 120), Color("#2c2f36"))
+		t.fill_rect(Rect2i(10, 150, 20, 10), Color("#2c2f36"))
+		t.fill_rect(Rect2i(8, 12, 24, 30), Color("#2c2f36"))
+		t.fill_rect(Rect2i(11, 15, 18, 24), Color("#ffe9a0") if f == 0 else Color("#ffd870"))
+		t.fill_rect(Rect2i(6, 6, 28, 7), Color("#2c2f36"))
+		lamp.append(t)
+	_save_sprite("lamp.sprite", _sprite("lamp", lamp, Vector2i(64, 256), 0, 400), "Lamp post", "Lights", true)
+
+	# Crate
+	var crate := _canvas(64, 64)
+	crate.fill_rect(Rect2i(2, 2, 60, 60), Color("#8a5a2b"))
+	for e in [Rect2i(2, 2, 60, 6), Rect2i(2, 56, 60, 6), Rect2i(2, 2, 6, 60), Rect2i(56, 2, 6, 60)]:
+		crate.fill_rect(e, Color("#5b3a1e"))
+	for k in 50:
+		crate.fill_rect(Rect2i(8 + k, 8 + k, 5, 5), Color("#5b3a1e"))
+	crate.set_pixel(0, 0, KEY)
+	_save_sprite("crate.sprite", _sprite("crate", [crate], Vector2i(110, 110)), "Crate", "Objects", true)
+
+	# Treasure chest
+	var chest := _canvas(80, 64)
+	chest.fill_rect(Rect2i(4, 22, 72, 40), Color("#7a4a22"))
+	_fill_ellipse(chest, Vector2(40, 24), 36, 14, Color("#8a5a2b"))
+	chest.fill_rect(Rect2i(4, 24, 72, 5), Color("#d8a93a"))
+	chest.fill_rect(Rect2i(34, 24, 12, 16), Color("#d8a93a"))
+	chest.fill_rect(Rect2i(38, 30, 4, 5), Color("#3b2412"))
+	_save_sprite("chest.sprite", _sprite("chest", [chest], Vector2i(120, 96)), "Treasure chest", "Objects", true)
 
 
 # --- Audio ----------------------------------------------------------------------
@@ -426,6 +551,47 @@ func _make_audio() -> void:
 			["-c:a", "aac", "-b:a", "96k"])
 
 	_write("media/theme.mid", _theme_midi())
+
+	# More loops for the library.
+	var wind := PackedFloat32Array()
+	lp = 0.0
+	var lp2 := 0.0
+	for i in RATE * 8:
+		var t := float(i) / RATE
+		lp += (rng.randf_range(-1, 1) - lp) * 0.02
+		lp2 += (lp - lp2) * 0.3
+		wind.append(lp2 * 2.2 * (0.45 + 0.55 * sin(TAU * t / 8.0) * sin(TAU * t / 8.0)))
+	audio_names["wind"] = _save_audio("wind", _loopable(wind, 0.5), "ogg", ["-c:a", "libvorbis", "-q:a", "3"])
+	var birds := PackedFloat32Array()
+	birds.resize(RATE * 6)
+	for c in 18:
+		var at := rng.randi_range(0, birds.size() - RATE / 2)
+		var f0 := rng.randf_range(2200, 3800)
+		var notes := rng.randi_range(2, 5)
+		for n in notes:
+			var start := at + n * 1800
+			for k in 1400:
+				if start + k >= birds.size():
+					break
+				var sweep := f0 * (1.0 + 0.35 * sin(PI * k / 1400.0))
+				birds[start + k] += sin(TAU * sweep * k / RATE) * sin(PI * k / 1400.0) * 0.22
+	audio_names["birds"] = _save_audio("birds", _loopable(birds, 0.3), "ogg", ["-c:a", "libvorbis", "-q:a", "4"])
+	var fire := PackedFloat32Array()
+	lp = 0.0
+	for i in RATE * 4:
+		lp += (rng.randf_range(-1, 1) - lp) * 0.04
+		var v := lp * 0.6
+		if rng.randf() < 0.0015:
+			v += rng.randf_range(-0.9, 0.9)
+		fire.append(v)
+	audio_names["fire"] = _save_audio("fire", _loopable(fire, 0.2), "wav")
+
+	for s in [["fountain", "Fountain"], ["waves", "Ocean waves"], ["hum", "Eerie drone"],
+			["wind", "Wind"], ["birds", "Birdsong"], ["fire", "Campfire"]]:
+		manifest.sounds.append({"file": audio_names[s[0]], "name": s[1]})
+	manifest.music.append({"file": "theme.mid", "name": "Courtyard theme (MIDI)"})
+	manifest.music.append({"file": audio_names["ambient"], "name": "Ambient pad"})
+	manifest.music.append({"file": audio_names["voyage"], "name": "Voyage"})
 
 
 ## Four chords of `bar` seconds each (root MIDI notes, minor/major picked by
@@ -527,7 +693,7 @@ func _shortcut(file: String, page: String) -> void:
 	_write_text("domains/" + file, "[InternetShortcut]\r\nURL=http://../html/%s\r\n" % page)
 
 
-func _make_pages() -> void:
+func _make_library_pages() -> void:
 	_write_text("html/style.css", """body { margin: 0; padding: 12px 14px; background: #10141f; color: #e8ecf4;
   font: 15px/1.45 system-ui, sans-serif; }
 h1 { font-size: 20px; margin: 0 0 10px; color: #7fc4ff; }
@@ -552,6 +718,48 @@ function pushTo2D(html) {
   location = "borg://cmd.web@" + location.href.substring(0, location.href.lastIndexOf("/") + 1) + html;
 }
 """)
+	_write_text("html/page-template.html", """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>My page</title>
+<link rel="stylesheet" href="style.css">
+<script src="qborg.js"></script>
+</head>
+<body>
+<h1>My page</h1>
+<p>Pages like this one show beside your world (gtw2/gtw3 links) or in its place
+(gtw doorways). They are ordinary HTML5: add images, canvas, audio, anything.</p>
+<p><button onclick="pushTo3D('../other-world.borg')">Go to another world</button></p>
+<p class="note">pushTo3D() and pushTo2D() come from qborg.js and work in the original
+CYBERWORLD browser too.</p>
+</body>
+</html>
+""")
+	_write_text("scripts/template.js", """// A world script: see docs/SCRIPTING.md for the full borg API.
+// Paint trigger ids with the editor's "Script triggers" layer.
+
+borg.on("load", (world) => {
+  borg.message(`Welcome to !`);
+});
+
+borg.on("enter", ({ x, y, id }) => {
+  if (id === 1) {
+    borg.message(`You stepped on trigger 1 at ,.`);
+  }
+});
+
+borg.on("click", ({ x, y, id }) => {
+  if (id === 2) {
+    // Example: open a door by flattening a wall block and making it walkable.
+    borg.setTile("hgt", x, y - 1, 0);
+    borg.setTile("wal", x, y - 1, 0);
+  }
+});
+""")
+
+
+func _make_pages() -> void:
 	_page("welcome.html", "Hello, QBORG", """<p>Welcome to the OpenQBORG example courtyard: a <em>classic</em>
 16&times;16 world that the original CYBERWORLD tools could open.</p>
 <canvas id="sky" width="300" height="110"></canvas>
@@ -627,11 +835,11 @@ func _base_level(w: int, h: int, title: String, description: String) -> BorgLeve
 	var offsets := PackedInt64Array()
 	for i in Floor.size():
 		offsets.append(i * TILE * TILE)
-	level.set_ext_cfil("flr", "examples.flr", offsets)
+	level.set_ext_cfil("flr", "starter.flr", offsets)
 	var strips := PackedInt64Array()
 	for i in Wall.size():
 		strips.append(i * 256 * 1024)
-	level.set_ext_cfil("wal", "examples.wal", strips)
+	level.set_ext_cfil("wal", "starter.wal", strips)
 	return level
 
 
@@ -738,7 +946,7 @@ func _make_hello() -> void:
 	level.start_pos[2] = 20
 	var bdp := level.ensure_ext("bdp")
 	bdp.attrs = {"BC": "c98f2a", "POS": "14"}
-	bdp.items = [{"kind": "file", "href": "examples.bck", "text": ""}]
+	bdp.items = [{"kind": "file", "href": "starter-sky.bck", "text": ""}]
 	level.set_ext_files("gtw", PackedStringArray(["sprawl", "puzzle"]))
 	level.set_ext_files("gtw2", PackedStringArray(["info.url", "move.url"]))
 	level.set_ext_files("gtw3", PackedStringArray(["welcome.url"]))
@@ -813,7 +1021,7 @@ func _make_sprawl() -> void:
 	level.start_pos[2] = 20
 	var bdp := level.ensure_ext("bdp")
 	bdp.attrs = {"BC": "c98f2a", "POS": "14"}
-	bdp.items = [{"kind": "file", "href": "examples.bck", "text": ""}]
+	bdp.items = [{"kind": "file", "href": "starter-sky.bck", "text": ""}]
 	level.set_ext_files("gtw", PackedStringArray(["hello"]))
 	level.set_ext_files("gtw3", PackedStringArray(["sprawl.url"]))
 	level.set_ext_files("wav", PackedStringArray([audio_names["waves"]]))
@@ -826,7 +1034,7 @@ func _make_puzzle() -> void:
 	var offsets := PackedInt64Array()
 	for i in Floor.size():
 		offsets.append(i * TILE * TILE)
-	level.set_ext_cfil("cei", "examples.flr", offsets)
+	level.set_ext_cfil("cei", "starter.flr", offsets)
 	level.set_ext_files("spr", PackedStringArray(["orb.sprite", "torch.sprite", "portal.sprite"]))
 	var rows := PackedStringArray([
 		"################",

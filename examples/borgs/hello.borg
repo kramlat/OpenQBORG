@@ -30,10 +30,10 @@
 </map>
 <ext>
 <flr>
-	<cfil HREF="examples.flr">0 10000 20000 30000 40000 50000 60000 </cfil>
+	<cfil HREF="starter.flr">0 10000 20000 30000 40000 50000 60000 70000 80000 90000 </cfil>
 </flr>
 <wal>
-	<cfil HREF="examples.wal">0 40000 80000 c0000 </cfil>
+	<cfil HREF="starter.wal">0 40000 80000 c0000 100000 140000 </cfil>
 </wal>
 <nav>
 	<file HREF="hello.nav"/>
@@ -42,7 +42,7 @@
 	<file HREF="hello.emb"/>
 </emb>
 <bdp BC="c98f2a" POS="14">
-<file HREF="examples.bck"/>
+<file HREF="starter-sky.bck"/>
 </bdp>
 <spr>
 	<file HREF="tree.sprite"/>

@@ -335,6 +335,8 @@ func _build_walls() -> void:
 				if in_bounds(n) and level.get_cell("hgt", n.x, n.y) >= hgt:
 					continue
 				batch.quad(mat, face[1] + up, face[2] + up, face[2], face[1])
+			# Cap the block, for views from above (the editor, free look).
+			batch.quad(mat, Vector3(x, h, y), Vector3(x + 1, h, y), Vector3(x + 1, h, y + 1), Vector3(x, h, y + 1))
 	batch.emit(_content)
 
 

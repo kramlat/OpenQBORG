@@ -32,6 +32,7 @@ var world: BorgWorld
 var fetcher := BorgFetcher.new()
 var music := BorgMusic.new()
 var undo := UndoRedo.new()
+var library := StarterLibrary.new()
 
 var _unsaved := false
 var _geometry_dirty := false
@@ -71,6 +72,7 @@ func _ready() -> void:
 	add_child(fetcher)
 	add_child(music)
 	music.status_changed.connect(func(t): _status.text = t)
+	library.load_library()
 	_build_ui()
 	var start := ""
 	for arg in OS.get_cmdline_user_args():
@@ -122,6 +124,7 @@ func _build_ui() -> void:
 	_view_container.add_child(_viewport)
 	_setup_scene()
 	_center_tabs.add_child(_build_script_tab())
+	_center_tabs.add_child(_build_library_tab())
 
 	inner.add_child(_build_right_dock())
 
@@ -339,7 +342,10 @@ func _prop_spin(grid: GridContainer, key: String, label: String, lo: float, hi: 
 # --- Files -------------------------------------------------------------------
 
 func new_level() -> void:
-	_load_level(BorgLevel.create_empty(), "")
+	var l := BorgLevel.create_empty()
+	if library.available():
+		library.furnish(l)
+	_load_level(l, "")
 
 
 func open_file(p: String) -> void:
@@ -361,6 +367,10 @@ func save() -> void:
 	_unsaved = false
 	_update_title()
 	_status.text = "Saved " + path
+	if library.available():
+		var copied := library.copy_used(level, path.get_base_dir())
+		if not copied.is_empty():
+			_status.text += "  (copied %d file(s) from the starter library)" % copied.size()
 
 
 func _ask_open() -> void:
@@ -406,7 +416,9 @@ func _reload_world() -> void:
 		return
 	_building = true
 	fetcher.clear_cache()
-	var url := "file://" + path if not path.is_empty() else "file:///nonexistent/unsaved.borg"
+	# Unsaved worlds preview straight from the starter library.
+	var url := "file://" + path if not path.is_empty() \
+			else (library.base_url() + "unsaved.borg" if library.available() else "file:///nonexistent/unsaved.borg")
 	var next := BorgWorld.new()
 	await next.build(level, url, fetcher)
 	if world != null:
@@ -419,7 +431,7 @@ func _reload_world() -> void:
 	_refresh_values()
 	_building = false
 	if path.is_empty():
-		_status.text = "New world — save it next to domains/, objects/, media/ and scripts/ folders to use assets."
+		_status.text = "New world. Add things from the Library tab; what you use is copied next to the world when you save."
 
 
 func _update_title() -> void:
@@ -905,7 +917,212 @@ func _maybe_screenshot() -> void:
 	var out := OS.get_environment("OPENQBORG_SCREENSHOT")
 	if out.is_empty():
 		return
+	var tab := OS.get_environment("OPENQBORG_TAB")
+	if not tab.is_empty():
+		_center_tabs.current_tab = int(tab)
 	for i in 60:
 		await get_tree().process_frame
 	get_viewport().get_texture().get_image().save_png(out)
 	get_tree().quit()
+
+
+# --- Starter library ------------------------------------------------------------
+
+enum LibKind { SPRITES, FLOORS, WALLS, SOUNDS, MUSIC, BACKDROPS, TEMPLATES }
+const LIB_KINDS := ["Sprites", "Floor tiles", "Wall strips", "Sounds", "Music", "Backdrops",
+		"Page & script templates"]
+
+var _lib_kind: OptionButton
+var _lib_list: ItemList
+var _lib_info: Label
+var _lib_play: Button
+
+
+func _build_library_tab() -> Control:
+	var box := VBoxContainer.new()
+	box.name = "Library"
+	if not library.available():
+		var l := _label("The starter library wasn't found. Build it with tools/make_examples.gd.")
+		box.add_child(l)
+		return box
+	var row := HBoxContainer.new()
+	box.add_child(row)
+	_lib_kind = OptionButton.new()
+	for k in LIB_KINDS:
+		_lib_kind.add_item(k)
+	_lib_kind.item_selected.connect(func(_i): _refresh_library())
+	row.add_child(_lib_kind)
+	var use := Button.new()
+	use.text = "Use in world"
+	use.tooltip_text = "Adds the item to the world and selects it for painting (double-click works too)"
+	use.pressed.connect(func():
+		var sel := _lib_list.get_selected_items()
+		if sel.size() > 0:
+			_lib_use(sel[0]))
+	row.add_child(use)
+	_lib_play = Button.new()
+	_lib_play.text = "▶ Preview"
+	_lib_play.pressed.connect(_lib_preview)
+	row.add_child(_lib_play)
+	_lib_list = ItemList.new()
+	_lib_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_lib_list.max_columns = 0
+	_lib_list.icon_mode = ItemList.ICON_MODE_TOP
+	_lib_list.fixed_column_width = 120
+	_lib_list.fixed_icon_size = Vector2i(StarterLibrary.THUMB, StarterLibrary.THUMB)
+	_lib_list.same_column_width = true
+	_lib_list.item_activated.connect(_lib_use)
+	_lib_list.item_selected.connect(_lib_describe)
+	box.add_child(_lib_list)
+	_lib_info = _label("Everything here was made for OpenQBORG and can be used in your worlds.")
+	_lib_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_lib_info)
+	_refresh_library()
+	return box
+
+
+func _refresh_library() -> void:
+	_lib_list.clear()
+	var kind := _lib_kind.selected
+	_lib_play.visible = kind == LibKind.SOUNDS or kind == LibKind.MUSIC
+	var add := func(text: String, icon: Texture2D, meta: Dictionary):
+		var i := _lib_list.add_item(text, icon)
+		_lib_list.set_item_metadata(i, meta)
+	match kind:
+		LibKind.SPRITES:
+			var sprites: Array = library.manifest.get("sprites", [])
+			sprites.sort_custom(func(a, b): return a.category + a.name < b.category + b.name)
+			for s in sprites:
+				add.call(s.name, library.sprite_thumb(s.file), s)
+		LibKind.FLOORS:
+			var names := library.floor_names()
+			for i in names.size():
+				add.call(names[i], library.floor_thumb(i), {"index": i, "name": names[i]})
+		LibKind.WALLS:
+			var names := library.wall_names()
+			for i in names.size():
+				add.call(names[i], library.wall_thumb(i), {"index": i, "name": names[i]})
+		LibKind.SOUNDS:
+			for s in library.manifest.get("sounds", []):
+				add.call("%s\n%s" % [s.name, s.file.get_extension().to_upper()], null, s)
+		LibKind.MUSIC:
+			for s in library.manifest.get("music", []):
+				add.call("%s\n%s" % [s.name, s.file.get_extension().to_upper()], null, s)
+		LibKind.BACKDROPS:
+			for b in library.manifest.get("backdrops", []):
+				add.call(b.name, library.backdrop_thumb(b.file), b)
+		LibKind.TEMPLATES:
+			add.call("World script", null, {"folder": "scripts", "file": "template.js", "name": "World script"})
+			add.call("Page", null, {"folder": "html", "file": "page-template.html", "name": "Page"})
+
+
+func _lib_describe(i: int) -> void:
+	var m: Dictionary = _lib_list.get_item_metadata(i)
+	match _lib_kind.selected:
+		LibKind.SPRITES:
+			_lib_info.text = "%s (%s). Adds it to the world's sprites and selects the Objects layer.%s" % [
+					m.name, m.category, " Blocks walking: paint No-walk under it too." if m.get("blocks", false) else ""]
+		LibKind.FLOORS:
+			_lib_info.text = "%s. Selects the Floor layer with this tile; the world switches to the library's floor tiles if it used others." % m.name
+		LibKind.WALLS:
+			_lib_info.text = "%s. Selects No-walk / wall texture with this strip. Give the tiles a Wall height to raise them." % m.name
+		LibKind.SOUNDS:
+			_lib_info.text = "%s: a looping sound tile. Selects the Sounds layer to paint where it plays." % m.name
+		LibKind.MUSIC:
+			_lib_info.text = "%s: background music. Selects the Music layer to paint the region it covers." % m.name
+		LibKind.BACKDROPS:
+			_lib_info.text = "%s: the panorama behind the world, with a matching background colour." % m.name
+		LibKind.TEMPLATES:
+			_lib_info.text = "Copies the %s template into your world (save the world first)." % m.name.to_lower()
+
+
+func _lib_use(i: int) -> void:
+	var m: Dictionary = _lib_list.get_item_metadata(i)
+	var before := level.serialize()
+	match _lib_kind.selected:
+		LibKind.SPRITES:
+			_select_paint("obj", _ensure_ext_file("spr", m.file))
+		LibKind.FLOORS:
+			if not library.uses_library_floors(level):
+				library.use_floors(level)
+			_select_paint("flr", m.index)
+		LibKind.WALLS:
+			if not library.uses_library_walls(level):
+				library.use_walls(level)
+			_select_paint("wal", m.index + 1)
+		LibKind.SOUNDS:
+			_select_paint("wav", _ensure_ext_file("wav", m.file))
+		LibKind.MUSIC:
+			_select_paint("mid", _ensure_ext_file("mid", m.file))
+		LibKind.BACKDROPS:
+			library.set_backdrop(level, m)
+		LibKind.TEMPLATES:
+			_lib_use_template(m)
+			return
+	var after := level.serialize()
+	if after != before:
+		undo.create_action("Use %s from library" % m.name)
+		undo.add_do_method(_restore_snapshot.bind(after))
+		undo.add_undo_method(_restore_snapshot.bind(before))
+		undo.commit_action(false)
+		_mark_unsaved()
+		if not path.is_empty():
+			library.copy_used(level, path.get_base_dir())
+		_level_to_props()
+		_refresh_resources()
+		_reload_world()
+	_status.text = "Using %s from the starter library." % m.name
+
+
+## Adds `file` to an <ext> list if needed; returns its 1-based index.
+func _ensure_ext_file(tag: String, file: String) -> int:
+	var files := level.ext_files(tag)
+	var i := files.find(file)
+	if i < 0:
+		files.append(file)
+		level.set_ext_files(tag, files)
+		i = files.size() - 1
+	return i + 1
+
+
+## Selects a layer and value for painting and shows the 3D view.
+func _select_paint(layer: String, value: int) -> void:
+	for i in LAYERS.size():
+		if LAYERS[i][0] == layer:
+			_layer_list.select(i)
+	_refresh_values()
+	_refresh_overlay()
+	_value_spin.value = value
+	_center_tabs.current_tab = 0
+
+
+func _lib_use_template(m: Dictionary) -> void:
+	if path.is_empty():
+		_status.text = "Save the world first: templates are copied into its folder."
+		return
+	var world_dir := path.get_base_dir()
+	if m.folder == "scripts":
+		library.copy_file("scripts", m.file, world_dir)
+		_ensure_ext_file("js", m.file)
+		_mark_unsaved()
+		_refresh_resources()
+		_res_kind.select(RESOURCE_LISTS.map(func(r): return r[0]).find("js"))
+		_refresh_resources()
+		_res_list.select(level.ext_files("js").find(m.file))
+		_res_edit_script()
+		_status.text = "Copied scripts/%s into the world and opened it." % m.file
+	else:
+		for f in [m.file, "style.css", "qborg.js"]:
+			library.copy_file("html", f, world_dir)
+		_status.text = "Copied html/%s (with style.css and qborg.js) into the world. Link it from a .url shortcut in domains/." % m.file
+
+
+func _lib_preview() -> void:
+	var sel := _lib_list.get_selected_items()
+	if not music.current.is_empty() or sel.is_empty():
+		music.play_url("", fetcher)
+		_lib_play.text = "▶ Preview"
+		return
+	var m: Dictionary = _lib_list.get_item_metadata(sel[0])
+	music.play_url("file://" + library.path("media", m.file), fetcher)
+	_lib_play.text = "■ Stop"

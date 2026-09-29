@@ -1,0 +1,11 @@
+body { margin: 0; padding: 12px 14px; background: #10141f; color: #e8ecf4;
+  font: 15px/1.45 system-ui, sans-serif; }
+h1 { font-size: 20px; margin: 0 0 10px; color: #7fc4ff; }
+h2 { font-size: 16px; margin: 14px 0 6px; color: #f5c03f; }
+a, button { color: #7fc4ff; }
+button { background: #1d2a44; border: 1px solid #3c5a8a; border-radius: 6px; padding: 6px 10px;
+  margin: 4px 4px 4px 0; font: inherit; cursor: pointer; }
+button:hover { background: #274070; }
+kbd { background: #222a3a; border: 1px solid #3a4560; border-radius: 4px; padding: 0 5px; }
+canvas { width: 100%; border-radius: 8px; background: #05070d; }
+.note { color: #9aa6bd; font-size: 13px; }

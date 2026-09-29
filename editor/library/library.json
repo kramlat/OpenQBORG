@@ -1,0 +1,177 @@
+{
+	"backdrops": [
+		{
+			"color": "c98f2a",
+			"file": "starter-sky.bck",
+			"name": "Mountain sky",
+			"pos": 14
+		}
+	],
+	"floors": {
+		"file": "starter.flr",
+		"tiles": [
+			"Grass",
+			"Cobblestone path",
+			"Water",
+			"Stone floor",
+			"Metal plate",
+			"Glowing pad",
+			"Sand",
+			"Wooden planks",
+			"Snow",
+			"Dirt"
+		]
+	},
+	"music": [
+		{
+			"file": "theme.mid",
+			"name": "Courtyard theme (MIDI)"
+		},
+		{
+			"file": "ambient.ogg",
+			"name": "Ambient pad"
+		},
+		{
+			"file": "voyage.m4a",
+			"name": "Voyage"
+		}
+	],
+	"pages": [
+		{
+			"file": "page-template.html",
+			"name": "Page template"
+		},
+		{
+			"file": "style.css",
+			"name": "Page style sheet"
+		},
+		{
+			"file": "qborg.js",
+			"name": "Page helpers (pushTo3D)"
+		}
+	],
+	"scripts": [
+		{
+			"file": "template.js",
+			"name": "World script template"
+		}
+	],
+	"sounds": [
+		{
+			"file": "fountain.wav",
+			"name": "Fountain"
+		},
+		{
+			"file": "waves.flac",
+			"name": "Ocean waves"
+		},
+		{
+			"file": "hum.opus",
+			"name": "Eerie drone"
+		},
+		{
+			"file": "wind.ogg",
+			"name": "Wind"
+		},
+		{
+			"file": "birds.ogg",
+			"name": "Birdsong"
+		},
+		{
+			"file": "fire.wav",
+			"name": "Campfire"
+		}
+	],
+	"sprites": [
+		{
+			"blocks": true,
+			"category": "Nature",
+			"file": "tree.sprite",
+			"name": "Tree"
+		},
+		{
+			"blocks": false,
+			"category": "Lights",
+			"file": "torch.sprite",
+			"name": "Torch (animated)"
+		},
+		{
+			"blocks": true,
+			"category": "Features",
+			"file": "fountain.sprite",
+			"name": "Fountain (animated)"
+		},
+		{
+			"blocks": false,
+			"category": "Features",
+			"file": "portal.sprite",
+			"name": "Portal (animated)"
+		},
+		{
+			"blocks": true,
+			"category": "Features",
+			"file": "sign.sprite",
+			"name": "Signpost"
+		},
+		{
+			"blocks": false,
+			"category": "Walls",
+			"file": "banner.sprite",
+			"name": "Wall banner (on walls)"
+		},
+		{
+			"blocks": false,
+			"category": "Features",
+			"file": "orb.sprite",
+			"name": "Floating orb (animated)"
+		},
+		{
+			"blocks": true,
+			"category": "Nature",
+			"file": "rock.sprite",
+			"name": "Rock"
+		},
+		{
+			"blocks": true,
+			"category": "Nature",
+			"file": "bush.sprite",
+			"name": "Bush"
+		},
+		{
+			"blocks": false,
+			"category": "Nature",
+			"file": "flowers.sprite",
+			"name": "Flowers"
+		},
+		{
+			"blocks": true,
+			"category": "Lights",
+			"file": "lamp.sprite",
+			"name": "Lamp post"
+		},
+		{
+			"blocks": true,
+			"category": "Objects",
+			"file": "crate.sprite",
+			"name": "Crate"
+		},
+		{
+			"blocks": true,
+			"category": "Objects",
+			"file": "chest.sprite",
+			"name": "Treasure chest"
+		}
+	],
+	"version": 1,
+	"walls": {
+		"file": "starter.wal",
+		"strips": [
+			"Brick",
+			"Hedge",
+			"Stone blocks",
+			"Iron gate",
+			"Wooden planks",
+			"Marble"
+		]
+	}
+}

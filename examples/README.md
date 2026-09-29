@@ -10,7 +10,8 @@ godot --headless --path player --script ../tools/make_examples.gd
 ```
 
 (ffmpeg is used for the Ogg/Opus/FLAC/AAC files and ImageMagick for the
-emblem lettering; both are optional.)
+emblem lettering; both are optional.) The same run also rebuilds the editor's
+starter library in `editor/library/`, and the examples use its assets.
 
 ## Try them
 
@@ -32,11 +33,10 @@ The portals in the courtyard lead to the other two worlds.
 ```
 borgs/
   *.borg      the worlds
-  domains/    examples.flr (floor/ceiling tiles), examples.wal (wall strips),
-              examples.bck (panorama), per-world .nav maps and .emb emblems,
-              .url shortcuts to the pages
-  objects/    tree, torch, fountain, portal, sign, banner and orb sprites (CWS2)
-  media/      fountain.wav, theme.mid, hum.opus, ambient.ogg, waves.flac, voyage.m4a
+  domains/    starter.flr, starter.wal, starter-sky.bck (from the starter library),
+              per-world .nav maps and .emb emblems, .url shortcuts to the pages
+  objects/    the starter library's sprites (CWS2)
+  media/      the starter library's sounds and music
   scripts/    puzzle.js
   html/       side pages (plain HTML5), style.css, qborg.js
 ```

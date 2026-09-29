@@ -42,6 +42,10 @@ for app in player editor; do
 done
 rm -rf "$OUT/examples"
 cp -a "$ROOT/examples" "$OUT/examples"
+# The editor's starter library lives next to it.
+rm -rf "$OUT/library"
+cp -a "$ROOT/editor/library" "$OUT/library"
+rm -f "$OUT/library/.gdignore"
 cp "$ROOT/LICENSE" "$ROOT/README.md" "$OUT/"
 install -m 644 "$ROOT/dist/icons/application-x-qborg.svg" "$OUT/"
 install -m 644 "$ROOT/player/icon.svg" "$OUT/player.svg"
