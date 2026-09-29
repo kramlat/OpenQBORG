@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 extends SceneTree
 ## Headless checks for the shared core. From the repo root:
-##   godot --headless --path player --script res://addons/openqborg_core/tests/run_tests.gd -- [world_dir] [--audio=dir]
+##   godot --headless --path player --script res://addons/openqborg_core/tests/run_tests.gd -- [world_dir] [--audio=dir] [--frames=dir]
 ## Without a world dir only the synthetic tests run. With one, every .borg is
 ## parsed and round-tripped and every .sprite is decoded.
 
@@ -17,6 +17,8 @@ func _init() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--audio="):
 			_test_audio_dir(arg.trim_prefix("--audio="))
+		elif arg.begins_with("--frames="):
+			_test_frames_dir(arg.trim_prefix("--frames="))
 		else:
 			_test_world_dir(arg)
 	print("FAILED: %d" % failures if failures else "ALL PASSED")
@@ -197,3 +199,26 @@ func _test_sprite_roundtrip() -> void:
 	check(back.animate_on_load and back.frame_durations == PackedInt32Array([100, 200, 300]), "sprite animation survives")
 	check(back.on_south and not back.on_north, "sprite wall flags survive")
 	check(back.image.get_pixel(0, 0).a == 0.0 and back.image.get_pixel(12, 44).a == 1.0, "colour key applied")
+
+
+## Pictures in `dir` named anim.* must decode to several frames with delays,
+## still.* to exactly one (see the ffmpeg testsrc commands in the docs).
+func _test_frames_dir(dir_path: String) -> void:
+	print("frame decoder: %s" % ("loaded" if BorgFrames.has_decoder() else "not loaded"))
+	for f in DirAccess.get_files_at(dir_path):
+		var bytes := FileAccess.get_file_as_bytes(dir_path.path_join(f))
+		var frames := BorgFrames.decode(bytes)
+		var kind := BorgFrames.sniff(bytes)
+		if f.begins_with("anim."):
+			check(frames != null and frames.images.size() >= 4 and frames.total_ms > 0,
+					"animated %s decodes to frames" % f)
+		else:
+			check(frames != null and frames.images.size() == 1, "still %s decodes to one frame" % f)
+		if frames != null:
+			var img := frames.first()
+			check(img.get_size() == Vector2i(256, 512), "%s frame size" % f)
+			print("%-14s %-6s -> %2d frame(s), %4d ms loop, %s" % [f, kind, frames.images.size(),
+					frames.total_ms, img.get_size()])
+	# Plain JPEGs must not be mistaken for Motion JPEG.
+	check(BorgFrames.sniff(FileAccess.get_file_as_bytes(dir_path.path_join("still.jpg"))) == "image",
+			"single JPEG is not MJPEG")

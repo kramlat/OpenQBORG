@@ -78,6 +78,12 @@ stream walks up each column, starting at the left.
   pixel offsets (`y * width + x`) of each tile. Floor and ceiling images are
   256 pixels wide stacks of 256×256 tiles. Wall images are 1024 wide, and each
   strip is stored sideways: the image's X axis runs down the wall.
+* Any of these images may be **animated**. The original browser played
+  animated GIFs; OpenQBORG also plays APNG and Motion JPEG (raw, AVI, MOV,
+  multipart). Each frame is a whole image, so every tile or strip taken from it
+  animates in step, and unchanged areas just look still. A GIF or APNG shows
+  its first frame in software that doesn't animate it, so nothing breaks. Raw
+  MJPEG has no frame timing and plays at 25 fps; use AVI or MOV to set a rate.
 * `<bdp BC="bgr" POS="n">`: background colour (**BGR** hex) and an optional
   panorama `<file>` whose bottom edge sits `POS` pixels below the horizon
   (signed 32-bit). The panorama scrolls one image width per 90° of turning.

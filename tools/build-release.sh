@@ -6,7 +6,7 @@
 #
 # Needs Godot export templates for your Godot version, the godot-cef addon
 # (tools/fetch-assets.sh cef [--source]) and a SoundFont (fetch-assets.sh
-# soundfont). The audio extension is (re)built against the LGPL-only FFmpeg,
+# soundfont). The media extension is (re)built against the LGPL-only FFmpeg,
 # which is what a distributable copy must ship.
 # Then: tools/install-desktop.sh --built  registers it for .borg/borg:// links.
 set -euo pipefail
@@ -17,8 +17,8 @@ OUT="$ROOT/build/linux"
 
 [[ -d "$ROOT/player/addons/godot_cef/bin" ]] || { echo "godot-cef missing: tools/fetch-assets.sh cef" >&2; exit 1; }
 ls "$ROOT"/soundfonts/*.sf2 >/dev/null 2>&1 || echo "warning: no SoundFont; MIDI music will be silent (fetch-assets.sh soundfont)" >&2
-if ! ls "$ROOT"/shared/openqborg_audio/bin/libavformat.so.* >/dev/null 2>&1; then
-	"$ROOT/tools/build-audio-ext.sh" --lgpl
+if ! ls "$ROOT"/shared/openqborg_media/bin/libavformat.so.* >/dev/null 2>&1; then
+	"$ROOT/tools/build-media-ext.sh" --lgpl
 fi
 
 # Distro packages (e.g. Arch) install templates system-wide, but Godot only

@@ -31,10 +31,10 @@
 </map>
 <ext>
 <flr>
-	<cfil HREF="starter.flr">0 10000 20000 30000 40000 50000 60000 70000 80000 90000 </cfil>
+	<cfil HREF="starter-anim.flr">0 10000 20000 30000 40000 50000 60000 70000 80000 90000 a0000 </cfil>
 </flr>
 <wal>
-	<cfil HREF="starter.wal">0 40000 80000 c0000 100000 140000 </cfil>
+	<cfil HREF="starter-anim.wal">0 40000 80000 c0000 100000 140000 180000 </cfil>
 </wal>
 <nav>
 	<file HREF="sprawl.nav"/>

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Mark Toman and OpenQBORG contributors
 #include "ffmpeg_audio_decoder.h"
+#include "memory_io.h"
 
 #include <godot_cpp/core/class_db.hpp>
 
@@ -20,56 +21,12 @@ using namespace godot;
 
 namespace {
 
-constexpr int IO_BUFFER_SIZE = 32 * 1024;
+using oqb::av_error;
 constexpr int MAX_MIX_RATE = 192000;
-
-struct MemoryReader {
-	const uint8_t *data = nullptr;
-	int64_t size = 0;
-	int64_t pos = 0;
-};
-
-int read_packet(void *opaque, uint8_t *buf, int buf_size) {
-	auto *r = static_cast<MemoryReader *>(opaque);
-	int64_t left = r->size - r->pos;
-	if (left <= 0) {
-		return AVERROR_EOF;
-	}
-	int n = static_cast<int>(std::min<int64_t>(buf_size, left));
-	std::memcpy(buf, r->data + r->pos, n);
-	r->pos += n;
-	return n;
-}
-
-int64_t seek(void *opaque, int64_t offset, int whence) {
-	auto *r = static_cast<MemoryReader *>(opaque);
-	if (whence == AVSEEK_SIZE) {
-		return r->size;
-	}
-	int64_t base = 0;
-	switch (whence & ~AVSEEK_FORCE) {
-		case SEEK_SET: base = 0; break;
-		case SEEK_CUR: base = r->pos; break;
-		case SEEK_END: base = r->size; break;
-		default: return -1;
-	}
-	int64_t target = base + offset;
-	if (target < 0 || target > r->size) {
-		return -1;
-	}
-	r->pos = target;
-	return target;
-}
-
-String av_error(int err) {
-	char buf[AV_ERROR_MAX_STRING_SIZE] = {};
-	av_strerror(err, buf, sizeof(buf));
-	return String(buf);
-}
 
 // Owns every FFmpeg object for one decode, so early returns can't leak.
 struct Session {
-	MemoryReader reader;
+	oqb::MemoryReader reader;
 	AVIOContext *io = nullptr;
 	AVFormatContext *fmt = nullptr;
 	AVCodecContext *codec = nullptr;
@@ -82,11 +39,7 @@ struct Session {
 		av_packet_free(&packet);
 		swr_free(&swr);
 		avcodec_free_context(&codec);
-		avformat_close_input(&fmt);
-		if (io) {
-			av_freep(&io->buffer);
-			avio_context_free(&io);
-		}
+		oqb::close_input(&fmt, &io);
 	}
 };
 
@@ -118,16 +71,7 @@ Dictionary FFmpegAudioDecoder::decode(const PackedByteArray &bytes, double max_s
 	s.reader.data = bytes.ptr();
 	s.reader.size = bytes.size();
 
-	auto *io_buffer = static_cast<uint8_t *>(av_malloc(IO_BUFFER_SIZE));
-	s.io = avio_alloc_context(io_buffer, IO_BUFFER_SIZE, 0, &s.reader, read_packet, nullptr, seek);
-	if (!s.io) {
-		av_free(io_buffer);
-		return failure("out of memory");
-	}
-	s.fmt = avformat_alloc_context();
-	s.fmt->pb = s.io;
-	s.fmt->flags |= AVFMT_FLAG_CUSTOM_IO;
-	int err = avformat_open_input(&s.fmt, nullptr, nullptr, nullptr);
+	int err = oqb::open_input(&s.reader, &s.fmt, &s.io);
 	if (err < 0) {
 		return failure("unrecognised audio: " + av_error(err));
 	}

@@ -11,6 +11,6 @@
 # SoundFonts (GeneralUser GS ~30 MB): install with tools/fetch-assets.sh soundfont
 /soundfonts/*.sf2
 
-# Built GDExtension binaries: tools/build-audio-ext.sh
-/shared/openqborg_audio/bin/
+# Built GDExtension binaries: tools/build-media-ext.sh
+/shared/openqborg_media/bin/
 /build/

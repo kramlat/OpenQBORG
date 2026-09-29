@@ -7,7 +7,7 @@ extends RefCounted
 ## Godot decodes WAV (PCM), Ogg Vorbis and MP3 itself. Everything else — AAC
 ## (.aac/.m4a/.mp4), Opus (.opus/.oga), FLAC, ALAC, WMA, AIFF, WebM/Matroska
 ## audio, ADPCM or mu-law WAV, ... — goes through the OpenQBORG audio
-## GDExtension (FFmpeg, addons/openqborg_audio) when it is installed.
+## GDExtension (FFmpeg, addons/openqborg_media) when it is installed.
 
 ## File extensions worth offering in pickers. The real format is sniffed from
 ## the bytes, never trusted from the name.
@@ -77,7 +77,7 @@ static func decode(bytes: PackedByteArray, name := "") -> AudioStream:
 
 static func _decode_ffmpeg(bytes: PackedByteArray, name: String) -> AudioStream:
 	if not has_ffmpeg():
-		last_error = "%s: this format needs the OpenQBORG audio extension (tools/build-audio-ext.sh)" % name
+		last_error = "%s: this format needs the OpenQBORG media extension (tools/build-media-ext.sh)" % name
 		return null
 	var r: Dictionary = ClassDB.class_call_static("FFmpegAudioDecoder", "decode", bytes, MAX_SECONDS)
 	if not r.get("ok", false):

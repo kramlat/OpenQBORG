@@ -995,10 +995,14 @@ func _refresh_library() -> void:
 			for s in sprites:
 				add.call(s.name, library.sprite_thumb(s.file), s)
 		LibKind.FLOORS:
+			add.call("Animated set", null, {"set": true, "name": "the animated floor set"})
+			add.call("Still set", null, {"set": false, "name": "the still floor set"})
 			var names := library.floor_names()
 			for i in names.size():
 				add.call(names[i], library.floor_thumb(i), {"index": i, "name": names[i]})
 		LibKind.WALLS:
+			add.call("Animated set", null, {"set": true, "name": "the animated wall set"})
+			add.call("Still set", null, {"set": false, "name": "the still wall set"})
 			var names := library.wall_names()
 			for i in names.size():
 				add.call(names[i], library.wall_thumb(i), {"index": i, "name": names[i]})
@@ -1022,6 +1026,10 @@ func _lib_describe(i: int) -> void:
 		LibKind.SPRITES:
 			_lib_info.text = "%s (%s). Adds it to the world's sprites and selects the Objects layer.%s" % [
 					m.name, m.category, " Blocks walking: paint No-walk under it too." if m.get("blocks", false) else ""]
+		LibKind.FLOORS when m.has("set"):
+			_lib_info.text = "Switches the world to %s. Both sets have the same tiles in the same order, so painted floors stay put; the animated set (a GIF) makes water, the glowing pad and lava move." % m.name
+		LibKind.WALLS when m.has("set"):
+			_lib_info.text = "Switches the world to %s. Same strips, same order; the animated set (a GIF) makes the waterfall flow." % m.name
 		LibKind.FLOORS:
 			_lib_info.text = "%s. Selects the Floor layer with this tile; the world switches to the library's floor tiles if it used others." % m.name
 		LibKind.WALLS:
@@ -1043,13 +1051,19 @@ func _lib_use(i: int) -> void:
 		LibKind.SPRITES:
 			_select_paint("obj", _ensure_ext_file("spr", m.file))
 		LibKind.FLOORS:
-			if not library.uses_library_floors(level):
-				library.use_floors(level)
-			_select_paint("flr", m.index)
+			if m.has("set"):
+				library.use_floors(level, "flr", m.set)
+			else:
+				if not library.uses_library_floors(level):
+					library.use_floors(level)
+				_select_paint("flr", m.index)
 		LibKind.WALLS:
-			if not library.uses_library_walls(level):
-				library.use_walls(level)
-			_select_paint("wal", m.index + 1)
+			if m.has("set"):
+				library.use_walls(level, m.set)
+			else:
+				if not library.uses_library_walls(level):
+					library.use_walls(level)
+				_select_paint("wal", m.index + 1)
 		LibKind.SOUNDS:
 			_select_paint("wav", _ensure_ext_file("wav", m.file))
 		LibKind.MUSIC:

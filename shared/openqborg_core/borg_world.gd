@@ -32,6 +32,11 @@ var ceiling_height := 1.0
 var nav_image: Image
 var emblem_image: Image
 var backdrop_image: Image
+## Frames of the emblem and backdrop, when they are animated (else one frame).
+var emblem_frames: BorgFrames
+var backdrop_frames: BorgFrames
+## Milliseconds since the world started, driving texture animation.
+var anim_ms := 0.0
 ## Per wav index: AudioStream or null.
 var sounds: Array = []
 ## World scripts (OpenQBORG extension): [{name, source}].
@@ -48,6 +53,14 @@ var _ceiling_tiles: Texture2DArray
 var _ceiling_tile_count := 0
 var _wall_strips: Array = []
 var _wall_mat_cache := {}
+## Frames of the floor/ceiling tile images (null or one frame: static).
+var _floor_frames: BorgFrames
+var _ceiling_frames: BorgFrames
+var _wall_frames: BorgFrames
+## Animated surface materials: [{mat, count, frames}] (rebuilt with geometry).
+var _surface_anims: Array = []
+## Animated wall materials: [{mat, textures, frames}] (kept with the cache).
+var _wall_anims: Array = []
 var _content: Node3D
 
 
@@ -76,19 +89,23 @@ func build(p_level: BorgLevel, url: String, p_fetcher: BorgFetcher) -> void:
 	ceiling_height = level.ceiling_height_px() * PX
 
 	nav_image = await _load_image(domains_url(level.ext_file("nav")))
-	emblem_image = await _load_image(domains_url(level.ext_file("emb")))
+	emblem_frames = await _load_frames(domains_url(level.ext_file("emb")))
+	emblem_image = emblem_frames.first() if emblem_frames != null else null
 	var bdp := level.find_ext("bdp")
 	if not bdp.is_empty():
 		for item in bdp.items:
 			if item.kind == "file":
-				backdrop_image = await _load_image(domains_url(item.href))
+				backdrop_frames = await _load_frames(domains_url(item.href))
+				backdrop_image = backdrop_frames.first() if backdrop_frames != null else null
 
 	var flr := await _load_surface_tiles("flr")
 	_floor_tiles = flr.array
 	_floor_tile_count = flr.count
+	_floor_frames = flr.frames
 	var cei := await _load_surface_tiles("cei")
 	_ceiling_tiles = cei.array
 	_ceiling_tile_count = cei.count
+	_ceiling_frames = cei.frames
 	await _load_wall_strips()
 	for href in level.ext_files("spr"):
 		var bytes := await fetcher.fetch(objects_url(href))
@@ -112,6 +129,7 @@ func rebuild() -> void:
 	if _content != null:
 		_content.free()
 	_animated.clear()
+	_surface_anims.clear()
 	_content = Node3D.new()
 	_content.name = "Content"
 	add_child(_content)
@@ -139,9 +157,20 @@ func _load_image(url: String) -> Image:
 	return decode_image(await fetcher.fetch(url))
 
 
+## All frames of a picture (animated GIF/APNG/MJPEG, or one frame).
+func _load_frames(url: String) -> BorgFrames:
+	if url.ends_with("/"):
+		return null
+	return BorgFrames.decode(await fetcher.fetch(url))
+
+
+## First frame of any supported picture. GIFs go through the media extension.
 static func decode_image(bytes: PackedByteArray) -> Image:
 	if bytes.size() < 12:
 		return null
+	if bytes.slice(0, 4).get_string_from_ascii() == "GIF8":
+		var frames := BorgFrames.decode(bytes)
+		return frames.first() if frames != null else null
 	var img := Image.new()
 	var err := ERR_FILE_UNRECOGNIZED
 	if bytes[0] == 0x89 and bytes[1] == 0x50:
@@ -166,36 +195,49 @@ static func unshaded_material(tex: Texture2D) -> StandardMaterial3D:
 
 ## Floor/ceiling images are 256-wide stacks of 256x256 tiles; the cfil offsets
 ## are pixel offsets (y * width + x) of each tile's top-left corner.
-## Returns {array: Texture2DArray (one layer per tile) or null, count}.
+## Returns {array: Texture2DArray or null, count, frames: BorgFrames}. For an
+## animated image the array holds every frame's tiles in turn
+## (layer = frame * count + tile) and the shader steps through them.
 func _load_surface_tiles(tag: String) -> Dictionary:
-	var none := {"array": null, "count": 0}
+	var none := {"array": null, "count": 0, "frames": null}
 	var cfil := level.ext_cfil(tag)
 	if cfil.is_empty():
 		return none
-	var img := await _load_image(domains_url(cfil.href))
-	if img == null:
+	var frames := await _load_frames(domains_url(cfil.href))
+	if frames == null or frames.images.is_empty():
 		return none
-	img.convert(Image.FORMAT_RGBA8)
+	var count: int = cfil.offsets.size()
+	if count == 0:
+		return none
+	# GPUs cap array layers (2048 is safe); drop frames beyond that.
+	var usable := mini(frames.images.size(), maxi(1, 2048 / count))
 	var tiles: Array[Image] = []
-	for off in cfil.offsets:
-		var x := int(off % img.get_width())
-		var y := int(off / img.get_width())
-		var region := Rect2i(x, y, mini(256, img.get_width() - x), mini(256, img.get_height() - y))
-		var tile: Image
-		if region.size.x > 0 and region.size.y > 0:
-			tile = img.get_region(region)
-		else:
-			tile = Image.create(256, 256, false, Image.FORMAT_RGBA8)
-			tile.fill(Color.MAGENTA)
-		# Array layers must all match.
-		if tile.get_size() != Vector2i(256, 256):
-			tile.resize(256, 256, Image.INTERPOLATE_NEAREST)
-		tiles.append(tile)
-	if tiles.is_empty():
-		return none
+	for f in usable:
+		var img := frames.images[f]
+		img.convert(Image.FORMAT_RGBA8)
+		for off in cfil.offsets:
+			var x := int(off % img.get_width())
+			var y := int(off / img.get_width())
+			var region := Rect2i(x, y, mini(256, img.get_width() - x), mini(256, img.get_height() - y))
+			var tile: Image
+			if region.size.x > 0 and region.size.y > 0:
+				tile = img.get_region(region)
+			else:
+				tile = Image.create(256, 256, false, Image.FORMAT_RGBA8)
+				tile.fill(Color.MAGENTA)
+			# Array layers must all match.
+			if tile.get_size() != Vector2i(256, 256):
+				tile.resize(256, 256, Image.INTERPOLATE_NEAREST)
+			tiles.append(tile)
+	if usable < frames.images.size():
+		frames.images = frames.images.slice(0, usable)
+		frames.delays = frames.delays.slice(0, usable)
+		frames.total_ms = 0
+		for d in frames.delays:
+			frames.total_ms += d
 	var array := Texture2DArray.new()
 	array.create_from_images(tiles)
-	return {"array": array, "count": tiles.size()}
+	return {"array": array, "count": count, "frames": frames}
 
 
 ## Wall images are 1024 wide. Each strip is stored sideways: the image's X
@@ -204,11 +246,12 @@ func _load_wall_strips() -> void:
 	var cfil := level.ext_cfil("wal")
 	if cfil.is_empty():
 		return
-	var img := await _load_image(domains_url(cfil.href))
-	if img == null:
+	_wall_frames = await _load_frames(domains_url(cfil.href))
+	if _wall_frames == null or _wall_frames.images.is_empty():
 		return
+	var img := _wall_frames.first()
 	for off in cfil.offsets:
-		_wall_strips.append({"image": img, "x": int(off % img.get_width()), "y": int(off / img.get_width())})
+		_wall_strips.append({"x": int(off % img.get_width()), "y": int(off / img.get_width())})
 
 
 func _wall_material(index: int, height_px: int) -> Material:
@@ -218,12 +261,16 @@ func _wall_material(index: int, height_px: int) -> Material:
 	var mat: StandardMaterial3D
 	if index >= 0 and index < _wall_strips.size():
 		var strip: Dictionary = _wall_strips[index]
-		var img: Image = strip.image
-		var region := Rect2i(strip.x, strip.y, mini(height_px, img.get_width() - strip.x),
-				mini(WALL_STRIP_HEIGHT, img.get_height() - strip.y))
-		var face := img.get_region(region)
-		face.rotate_90(CLOCKWISE)
-		mat = unshaded_material(ImageTexture.create_from_image(face))
+		var textures: Array[Texture2D] = []
+		for img in _wall_frames.images:
+			var region := Rect2i(strip.x, strip.y, mini(height_px, img.get_width() - strip.x),
+					mini(WALL_STRIP_HEIGHT, img.get_height() - strip.y))
+			var face := img.get_region(region)
+			face.rotate_90(CLOCKWISE)
+			textures.append(ImageTexture.create_from_image(face))
+		mat = unshaded_material(textures[0])
+		if _wall_frames.is_animated():
+			_wall_anims.append({"mat": mat, "textures": textures, "frames": _wall_frames})
 	else:
 		mat = unshaded_material(null)
 		mat.albedo_color = Color(0.45, 0.45, 0.5)
@@ -304,6 +351,9 @@ func _surface_multimesh(layer: String, tiles: Texture2DArray, count: int, basis:
 	var mat := ShaderMaterial.new()
 	mat.shader = preload("surface_tiles.gdshader")
 	mat.set_shader_parameter("tiles", tiles)
+	var frames: BorgFrames = _floor_frames if layer == "flr" else _ceiling_frames
+	if frames != null and frames.is_animated():
+		_surface_anims.append({"mat": mat, "count": count, "frames": frames})
 	var mmi := MultiMeshInstance3D.new()
 	mmi.name = "Floor" if layer == "flr" else "Ceiling"
 	mmi.multimesh = mm
@@ -447,6 +497,15 @@ func _build_sounds() -> void:
 
 
 func _process(delta: float) -> void:
+	# Animated textures (GIF/APNG/MJPEG): step every surface and wall.
+	anim_ms += delta * 1000.0
+	for s in _surface_anims:
+		var f: int = s.frames.frame_at(anim_ms)
+		s.mat.set_shader_parameter("frame_offset", float(f * s.count))
+	for w in _wall_anims:
+		var tex: Texture2D = w.textures[w.frames.frame_at(anim_ms)]
+		if w.mat.albedo_texture != tex:
+			w.mat.albedo_texture = tex
 	for a in _animated:
 		var sprite: CWSprite = a.sprite
 		var s: Sprite3D = a.node

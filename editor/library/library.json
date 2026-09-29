@@ -8,6 +8,7 @@
 		}
 	],
 	"floors": {
+		"animated": "starter-anim.flr",
 		"file": "starter.flr",
 		"tiles": [
 			"Grass",
@@ -19,7 +20,8 @@
 			"Sand",
 			"Wooden planks",
 			"Snow",
-			"Dirt"
+			"Dirt",
+			"Lava"
 		]
 	},
 	"music": [
@@ -164,6 +166,7 @@
 	],
 	"version": 1,
 	"walls": {
+		"animated": "starter-anim.wal",
 		"file": "starter.wal",
 		"strips": [
 			"Brick",
@@ -171,7 +174,8 @@
 			"Stone blocks",
 			"Iron gate",
 			"Wooden planks",
-			"Marble"
+			"Marble",
+			"Waterfall"
 		]
 	}
 }

@@ -15,12 +15,15 @@ const KEY := Color(1, 0, 1) # sprite colour key
 const RATE := 22050
 
 ## Floor/ceiling tiles in starter.flr, by index.
-enum Floor { GRASS, PATH, WATER, STONE, PLATE, PAD, SAND, PLANKS, SNOW, DIRT }
+enum Floor { GRASS, PATH, WATER, STONE, PLATE, PAD, SAND, PLANKS, SNOW, DIRT, LAVA }
 const FLOOR_NAMES := ["Grass", "Cobblestone path", "Water", "Stone floor", "Metal plate",
-		"Glowing pad", "Sand", "Wooden planks", "Snow", "Dirt"]
+		"Glowing pad", "Sand", "Wooden planks", "Snow", "Dirt", "Lava"]
 ## Wall strips in starter.wal; a wall tile's `wal` value is strip + 1.
-enum Wall { BRICK = 1, HEDGE, STONE, GATE, WOOD, MARBLE }
-const WALL_NAMES := ["Brick", "Hedge", "Stone blocks", "Iron gate", "Wooden planks", "Marble"]
+enum Wall { BRICK = 1, HEDGE, STONE, GATE, WOOD, MARBLE, WATERFALL }
+const WALL_NAMES := ["Brick", "Hedge", "Stone blocks", "Iron gate", "Wooden planks", "Marble", "Waterfall"]
+## Frames and frame time of the animated texture sets.
+const ANIM_FRAMES := 8
+const ANIM_MS := 125
 
 ## Where _write() puts files: the library first, then the examples.
 var out := ""
@@ -81,8 +84,8 @@ static func _copy_dir(from: String, to: String) -> void:
 
 
 func _write_manifest() -> void:
-	manifest["floors"] = {"file": "starter.flr", "tiles": FLOOR_NAMES}
-	manifest["walls"] = {"file": "starter.wal", "strips": WALL_NAMES}
+	manifest["floors"] = {"file": "starter.flr", "animated": "starter-anim.flr", "tiles": FLOOR_NAMES}
+	manifest["walls"] = {"file": "starter.wal", "animated": "starter-anim.wal", "strips": WALL_NAMES}
 	manifest["backdrops"] = [{"file": "starter-sky.bck", "name": "Mountain sky", "color": "c98f2a", "pos": 14}]
 	manifest["pages"] = [{"file": "page-template.html", "name": "Page template"},
 			{"file": "style.css", "name": "Page style sheet"}, {"file": "qborg.js", "name": "Page helpers (pushTo3D)"}]
@@ -157,6 +160,96 @@ static func _masonry(img: Image, block: Vector2i, shift: int, mortar: Color, wid
 				img.set_pixel(x, y, mortar)
 
 
+# --- Animated tiles --------------------------------------------------------------
+# Each takes a phase in [0, 1) and loops seamlessly.
+
+static func _water_tile(phase: float) -> Image:
+	var water := _noise_tile(4, 0.03, Color("#1b4f8a"), Color("#3c8fd0"))
+	for y in TILE:
+		for x in TILE:
+			# Ripples drift one wave period (32 px) per loop.
+			var v := posmod(int(y + 10.0 * sin(x * TAU / TILE * 2.0 + phase * TAU) + phase * 32.0), 32)
+			if v < 2:
+				water.set_pixel(x, y, Color("#8fd0ff"))
+	return water
+
+
+static func _pad_tile(phase: float) -> Image:
+	var pad := _noise_tile(7, 0.05, Color("#141a2e"), Color("#23305a"))
+	var pulse := 0.5 + 0.5 * sin(phase * TAU)
+	var glow := Color("#3f8fb0").lerp(Color("#bff4ff"), pulse)
+	for y in TILE:
+		for x in TILE:
+			var d := Vector2(x, y).distance_to(Vector2(128, 128))
+			if absf(d - 90 - pulse * 6.0) < 10 or absf(d - 50 + pulse * 4.0) < 5:
+				pad.set_pixel(x, y, glow)
+	return pad
+
+
+static func _lava_tile(phase: float) -> Image:
+	# Scrolls diagonally across its own seamless noise.
+	var src := _noise(18, 0.02).get_seamless_image(TILE, TILE)
+	var img := Image.create(TILE, TILE, false, Image.FORMAT_RGB8)
+	var shift := int(phase * TILE)
+	for y in TILE:
+		for x in TILE:
+			var v := src.get_pixel((x + shift) % TILE, (y + shift / 2) % TILE).r
+			var c := Color("#3a0a04").lerp(Color("#d4380d"), smoothstep(0.2, 0.55, v))
+			if v > 0.62:
+				c = c.lerp(Color("#ffd23f"), smoothstep(0.62, 0.8, v))
+			img.set_pixel(x, y, c)
+	return img
+
+
+static func _waterfall_face(phase: float) -> Image:
+	# Vertical streaks falling one image height per loop.
+	var src := _noise(19, 0.03).get_seamless_image(256, 256)
+	var img := Image.create(256, 1024, false, Image.FORMAT_RGB8)
+	var fall := int(phase * 256)
+	for y in 1024:
+		for x in 256:
+			var v := src.get_pixel(x, posmod(y / 4 - fall, 256)).r
+			img.set_pixel(x, y, Color("#1d5f9a").lerp(Color("#e8f6ff"), smoothstep(0.35, 0.8, v)))
+	return img
+
+
+## Stacks tiles (floor, 256x256 each) or faces (wall, rotated into 1024x256
+## strips) into one atlas image.
+static func _stack(parts: Array, walls: bool) -> Image:
+	var img := Image.create(1024 if walls else TILE, 256 * parts.size(), false, Image.FORMAT_RGB8)
+	for i in parts.size():
+		var part: Image = parts[i]
+		if walls:
+			part = part.duplicate()
+			part.rotate_90(COUNTERCLOCKWISE)
+		img.blit_rect(part, Rect2i(Vector2i.ZERO, part.get_size()), Vector2i(0, i * 256))
+	return img
+
+
+## Writes frames as a looping animated GIF (the format the original browser
+## animated) via ffmpeg: one shared palette, and later frames store only the
+## rectangles that change, so still tiles cost nothing. Much smaller than APNG
+## for these noisy textures. Without ffmpeg the first frame is written as a
+## still PNG, so references still work.
+func _write_animation(rel: String, frames: Array[Image]) -> void:
+	var target := out.path_join(rel)
+	if not have_ffmpeg:
+		_write(rel, frames[0].save_png_to_buffer())
+		return
+	var tmp := OS.get_cache_dir().path_join("openqborg-anim")
+	DirAccess.make_dir_recursive_absolute(tmp)
+	for i in frames.size():
+		frames[i].save_png(tmp.path_join("f%02d.png" % i))
+	var code := OS.execute("ffmpeg", ["-loglevel", "error", "-y", "-framerate", "1000/%d" % ANIM_MS,
+			"-i", tmp.path_join("f%02d.png"), "-vf",
+			"split[a][b];[a]palettegen=stats_mode=full[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle",
+			"-gifflags", "+transdiff", "-fflags", "+bitexact", "-loop", "0", "-f", "gif", target], [])
+	for i in frames.size():
+		DirAccess.remove_absolute(tmp.path_join("f%02d.png" % i))
+	if code != 0:
+		_write(rel, frames[0].save_png_to_buffer())
+
+
 # --- Textures -------------------------------------------------------------------
 
 func _make_textures() -> void:
@@ -171,12 +264,7 @@ func _make_textures() -> void:
 			if cell_img.get_pixel(x, y).r < 0.12:
 				path.set_pixel(x, y, Color("#5b5040"))
 	tiles.append(path)                                                                      # PATH
-	var water := _noise_tile(4, 0.03, Color("#1b4f8a"), Color("#3c8fd0"))
-	for y in TILE:
-		for x in TILE:
-			if int(y + 10.0 * sin(x * TAU / TILE * 2.0)) % 32 < 2:
-				water.set_pixel(x, y, Color("#8fd0ff"))
-	tiles.append(water)                                                                     # WATER
+	tiles.append(_water_tile(0.0))                                                          # WATER
 	var stone := _noise_tile(5, 0.06, Color("#55555c"), Color("#8a8a92"))
 	_masonry(stone, Vector2i(128, 128), 64, Color("#2c2c30"), 4)
 	tiles.append(stone)                                                                     # STONE
@@ -188,13 +276,7 @@ func _make_textures() -> void:
 	for p in [Vector2(32, 32), Vector2(224, 32), Vector2(32, 224), Vector2(224, 224)]:
 		_fill_circle(plate, p, 10, Color("#d8dde2"))
 	tiles.append(plate)                                                                     # PLATE
-	var pad := _noise_tile(7, 0.05, Color("#141a2e"), Color("#23305a"))
-	for y in TILE:
-		for x in TILE:
-			var d := Vector2(x, y).distance_to(Vector2(128, 128))
-			if absf(d - 90) < 10 or absf(d - 50) < 5:
-				pad.set_pixel(x, y, Color("#7fe3ff"))
-	tiles.append(pad)                                                                       # PAD
+	tiles.append(_pad_tile(0.0))                                                            # PAD
 	tiles.append(_noise_tile(8, 0.05, Color("#c9b47a"), Color("#efe0a8")))                  # SAND
 	var planks := _noise_tile(9, 0.02, Color("#6b4423"), Color("#a8743f"))
 	for y in TILE:
@@ -206,10 +288,19 @@ func _make_textures() -> void:
 	tiles.append(planks)                                                                    # PLANKS
 	tiles.append(_noise_tile(10, 0.06, Color("#c9d6e6"), Color("#ffffff")))                # SNOW
 	tiles.append(_noise_tile(11, 0.07, Color("#4a3322"), Color("#7a5a3a")))                # DIRT
-	var flr := Image.create(TILE, TILE * tiles.size(), false, Image.FORMAT_RGB8)
-	for i in tiles.size():
-		flr.blit_rect(tiles[i], Rect2i(0, 0, TILE, TILE), Vector2i(0, i * TILE))
-	_write("domains/starter.flr", flr.save_jpg_to_buffer(0.9))
+	tiles.append(_lava_tile(0.0))                                                           # LAVA
+	# starter.flr is still (a JPEG, like the originals); starter-anim.flr is an
+	# animated GIF of the same tiles with water, pad and lava moving.
+	_write("domains/starter.flr", _stack(tiles, false).save_jpg_to_buffer(0.9))
+	var flr_frames: Array[Image] = []
+	for f in ANIM_FRAMES:
+		var phase := float(f) / ANIM_FRAMES
+		var frame_tiles := tiles.duplicate()
+		frame_tiles[Floor.WATER] = _water_tile(phase)
+		frame_tiles[Floor.PAD] = _pad_tile(phase)
+		frame_tiles[Floor.LAVA] = _lava_tile(phase)
+		flr_frames.append(_stack(frame_tiles, false))
+	_write_animation("domains/starter-anim.flr", flr_frames)
 
 	# Wall faces are 256 wide and 1024 tall (top to bottom); the .wal file
 	# stores each one rotated a quarter turn into a 1024x256 strip.
@@ -244,12 +335,14 @@ func _make_textures() -> void:
 				marble.set_pixel(x, y, Color("#8f8a80"))
 	_masonry(marble, Vector2i(256, 256), 0, Color("#b8b4aa"), 2)
 	faces.append(marble)
-	var wal := Image.create(1024, 256 * faces.size(), false, Image.FORMAT_RGB8)
-	for i in faces.size():
-		var strip := faces[i].duplicate()
-		strip.rotate_90(COUNTERCLOCKWISE)
-		wal.blit_rect(strip, Rect2i(0, 0, 1024, 256), Vector2i(0, i * 256))
-	_write("domains/starter.wal", wal.save_jpg_to_buffer(0.9))
+	faces.append(_waterfall_face(0.0))
+	_write("domains/starter.wal", _stack(faces, true).save_jpg_to_buffer(0.9))
+	var wal_frames: Array[Image] = []
+	for f in ANIM_FRAMES:
+		var frame_faces := faces.duplicate()
+		frame_faces[Wall.WATERFALL - 1] = _waterfall_face(float(f) / ANIM_FRAMES)
+		wal_frames.append(_stack(frame_faces, true))
+	_write_animation("domains/starter-anim.wal", wal_frames)
 
 	_write("domains/starter-sky.bck", _panorama().save_jpg_to_buffer(0.9))
 
@@ -492,7 +585,9 @@ func _save_audio(base: String, samples: PackedFloat32Array, ext := "wav", codec:
 	if ext == "wav" or not have_ffmpeg:
 		return base + ".wav"
 	var target := out.path_join("media/%s.%s" % [base, ext])
-	var args := ["-loglevel", "error", "-y", "-i", wav_path]
+	# bitexact: no random stream serials or encoder tags, so regenerating
+	# doesn't churn the files in git.
+	var args := ["-loglevel", "error", "-y", "-i", wav_path, "-fflags", "+bitexact", "-flags", "+bitexact"]
 	args.append_array(codec)
 	args.append(target)
 	if OS.execute("ffmpeg", args, []) == 0:
@@ -835,11 +930,11 @@ func _base_level(w: int, h: int, title: String, description: String) -> BorgLeve
 	var offsets := PackedInt64Array()
 	for i in Floor.size():
 		offsets.append(i * TILE * TILE)
-	level.set_ext_cfil("flr", "starter.flr", offsets)
+	level.set_ext_cfil("flr", "starter-anim.flr", offsets)
 	var strips := PackedInt64Array()
 	for i in Wall.size():
 		strips.append(i * 256 * 1024)
-	level.set_ext_cfil("wal", "starter.wal", strips)
+	level.set_ext_cfil("wal", "starter-anim.wal", strips)
 	return level
 
 
@@ -928,6 +1023,9 @@ func _make_hello() -> void:
 		"s": {"flr": g, "obj": 5, "wal": 1},
 	}
 	var at := _paint(level, rows, legend)
+	# A waterfall in the north wall, behind the fountain.
+	for x in range(6, 10):
+		level.set_cell("wal", x, 0, Wall.WATERFALL)
 	# Banners painted on the inside (south) face of the north wall.
 	for x in [4, 11]:
 		level.set_cell("obj", x, 0, 6)
@@ -1034,7 +1132,7 @@ func _make_puzzle() -> void:
 	var offsets := PackedInt64Array()
 	for i in Floor.size():
 		offsets.append(i * TILE * TILE)
-	level.set_ext_cfil("cei", "starter.flr", offsets)
+	level.set_ext_cfil("cei", "starter-anim.flr", offsets)
 	level.set_ext_files("spr", PackedStringArray(["orb.sprite", "torch.sprite", "portal.sprite"]))
 	var rows := PackedStringArray([
 		"################",

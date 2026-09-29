@@ -45,6 +45,9 @@ var _loading := false
 var _world_dirty := false
 var _shot_started := false
 var _loading_url := ""
+## Per-frame textures when the backdrop or emblem is animated.
+var _backdrop_textures: Array[Texture2D] = []
+var _emblem_textures: Array[Texture2D] = []
 
 
 func _ready() -> void:
@@ -270,14 +273,16 @@ func _apply_level_look() -> void:
 	_env.background_color = world.level.background_color()
 	if world.backdrop_image != null:
 		var mat: ShaderMaterial = _backdrop.material
-		mat.set_shader_parameter("sky", ImageTexture.create_from_image(world.backdrop_image))
+		_backdrop_textures = _frame_textures(world.backdrop_frames)
+		mat.set_shader_parameter("sky", _backdrop_textures[0])
 		mat.set_shader_parameter("sky_size", Vector2(world.backdrop_image.get_size()))
 		_backdrop.visible = true
 		_env.background_mode = Environment.BG_CANVAS
 	else:
 		_backdrop.visible = false
 		_env.background_mode = Environment.BG_COLOR
-	_emblem.texture = ImageTexture.create_from_image(world.emblem_image) if world.emblem_image else null
+	_emblem_textures = _frame_textures(world.emblem_frames)
+	_emblem.texture = _emblem_textures[0] if not _emblem_textures.is_empty() else null
 	_nav.set_map(world.nav_image, Vector2i(world.level.width, world.level.height))
 
 
@@ -390,6 +395,10 @@ func _process(_delta: float) -> void:
 	mat.set_shader_parameter("view_size", Vector2(_viewport.size))
 	mat.set_shader_parameter("yaw", yaw)
 	mat.set_shader_parameter("horizon_offset", world.level.backdrop_offset() + walker.pitch * 983.0)
+	if _backdrop_textures.size() > 1:
+		mat.set_shader_parameter("sky", _backdrop_textures[world.backdrop_frames.frame_at(world.anim_ms)])
+	if _emblem_textures.size() > 1:
+		_emblem.texture = _emblem_textures[world.emblem_frames.frame_at(world.anim_ms)]
 	_nav.set_player(Vector2(walker.position.x, walker.position.z), yaw)
 
 	var tile := world.tile_of(walker.position)
@@ -470,6 +479,8 @@ func _maybe_screenshot() -> void:
 	print("screenshot: status=%s music=%s page=%s" % [_status.text, music.current, _side_page.current_url])
 	var sfx := world.find_children("*", "AudioStreamPlayer3D", true, false).map(func(p): return "%s:%s" % [p.stream.get_class(), p.playing])
 	print("screenshot: music_stream=%s sfx=%s" % [music.get_child(1).stream, sfx])
+	print("screenshot: animated surfaces=%d walls=%d frames(flr)=%s" % [world._surface_anims.size(), world._wall_anims.size(),
+			world._floor_frames.images.size() if world._floor_frames else 0])
 	get_viewport().get_texture().get_image().save_png(out)
 	get_tree().quit()
 
@@ -701,3 +712,11 @@ static func _site_of(url: String) -> String:
 		return ""
 	var end := url.find("/", i + 3)
 	return (url if end < 0 else url.left(end)).to_lower()
+
+
+static func _frame_textures(frames: BorgFrames) -> Array[Texture2D]:
+	var out: Array[Texture2D] = []
+	if frames != null:
+		for img in frames.images:
+			out.append(ImageTexture.create_from_image(img))
+	return out

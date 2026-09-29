@@ -37,10 +37,14 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
   `prompt()` appear as Godot dialogs (they can't block, so `confirm()` answers
   OK and `prompt()` returns its default). Pages from
   local worlds are served over loopback so their cookie-based save games work.
+* **Animated textures**: floor, ceiling and wall images, the backdrop and the
+  emblem can be animated GIFs (as in the original), APNGs or Motion JPEGs.
+  Floors and ceilings step through a texture array in the shader, so it stays
+  one draw call.
 * **Sound**: looping positional sound tiles and music regions in almost any
   format: WAV, Ogg Vorbis and MP3 natively, plus Opus (`.opus`/`.oga`), AAC
   (`.aac`/`.m4a`), FLAC, ALAC, WMA, AIFF, WebM/Matroska audio and ADPCM WAV
-  through the bundled FFmpeg audio extension. MIDI music plays through a
+  through the bundled FFmpeg media extension. MIDI music plays through a
   General MIDI SoundFont
   ([godot-midi-player](https://github.com/arlez80/godot-midi-player-g4)
   with GeneralUser GS, a GS bank like the one the original relied on in Windows).
@@ -57,8 +61,8 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
   script triggers), undo/redo, and world properties.
 * Resource lists (sprites, links, sounds, music, scripts, nav map, emblem),
   texture references with automatic tile detection, and MIDI preview.
-* **Starter library** (Library tab): 13 sprites, 10 floor tiles, 6 wall
-  strips, a sky backdrop, 6 sound loops, 3 music tracks, and page and script
+* **Starter library** (Library tab): 13 sprites, 11 floor tiles and 7 wall strips (each in a still set
+  and an animated GIF set with moving water, lava and a waterfall), a sky backdrop, 6 sound loops, 3 music tracks, and page and script
   templates, all original and free to use. New worlds start furnished from it,
   and whatever a world uses is copied into the world's own folders when you
   save, so it stays self-contained.
@@ -88,7 +92,8 @@ cd OpenQBORG
 tools/fetch-assets.sh soundfont   # GeneralUser GS, ~31 MB (MIDI music)
 tools/fetch-assets.sh cef         # godot-cef runtime for the player, ~560 MB
                                   # (or build it from source: tools/fetch-assets.sh cef --source)
-tools/build-audio-ext.sh          # FFmpeg audio extension (AAC, Opus, FLAC, ...)
+tools/build-media-ext.sh          # FFmpeg media extension (AAC, Opus, FLAC, ...,
+                                  # animated GIF/APNG/MJPEG textures)
 
 godot --path player -- examples/borgs/hello.borg   # the example worlds
 godot --path player -- borgs://example.org/world/level.borg
@@ -115,13 +120,14 @@ for just your user instead, without root, run `tools/install-desktop.sh`.
 with `GODOT=...`). Both editors work, since OpenQBORG has no C#. It needs the
 export templates for that editor. If your distro installed
 them system-wide (as Arch does), it links them into your user data folder.
-The copy ships the LGPL-only FFmpeg build next to the audio extension.
+The copy ships the LGPL-only FFmpeg build next to the media extension.
 Windows export presets are included, but a Windows build still needs the
-godot-cef and audio extension binaries for Windows.
+godot-cef and media extension binaries for Windows.
 
 The player runs without godot-cef too. In that case, world pages open in
-your web browser and world scripts don't run. Without the audio extension,
-WAV, Ogg Vorbis, MP3 and MIDI still play.
+your web browser and world scripts don't run. Without the media extension,
+WAV, Ogg Vorbis, MP3 and MIDI still play, and textures show without animation
+(GIFs need the extension).
 
 ### Player controls
 
@@ -162,10 +168,10 @@ third_party/            godot-midi-player-g4 (MIT, linked as addons/midi) and
                         godot-cpp (MIT), as submodules
 contrib/godot-cef/      godot-cef source (MIT, submodule pinned to the release the
                         player uses): build it with fetch-assets.sh cef --source
-extensions/             openqborg_audio GDExtension source (C++, FFmpeg)
-shared/openqborg_audio/ its .gdextension + built binaries, linked as addons/openqborg_audio
+extensions/             openqborg_media GDExtension source (C++, FFmpeg)
+shared/openqborg_media/ its .gdextension + built binaries, linked as addons/openqborg_media
 soundfonts/             SoundFonts (fetched, not committed)
-tools/                  fetch-assets.sh, install-desktop.sh, build-audio-ext.sh,
+tools/                  fetch-assets.sh, install-desktop.sh, build-media-ext.sh,
                         build-ffmpeg-lgpl.sh, make_examples.gd
 dist/                   .desktop entries, the .borg MIME type and its icon
 docs/                   FORMAT.md, SCRIPTING.md

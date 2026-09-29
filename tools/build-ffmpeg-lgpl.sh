@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Builds a small LGPL-only FFmpeg (shared libraries, audio decoding only) for
+# Builds a small LGPL-only FFmpeg (shared libraries, decoding only: audio plus
+# the animated picture formats used for textures) for
 # bundling with OpenQBORG releases. Distribution builds must use this rather
 # than a system FFmpeg, which is often configured with --enable-gpl.
 #
@@ -20,18 +21,19 @@ if [[ ! -d "ffmpeg-$VERSION" ]]; then
 	tar xf "ffmpeg-$VERSION.tar.xz"
 fi
 cd "ffmpeg-$VERSION"
-DECODERS="aac,aac_latm,mp1,mp2,mp3,mp3float,opus,vorbis,flac,alac,wmav1,wmav2,wmapro,wmalossless,
+DECODERS="gif,apng,png,mjpeg,aac,aac_latm,mp1,mp2,mp3,mp3float,opus,vorbis,flac,alac,wmav1,wmav2,wmapro,wmalossless,
 ape,wavpack,tta,speex,amrnb,amrwb,gsm,gsm_ms,ac3,eac3,dca,truehd,mlp,pcm_*,adpcm_*,
 dsd_*,qdmc,qdm2,atrac3,atrac3p,cook,ra_144,ra_288,nellymoser,sipr,g722,g723_1,g726,g729"
-DEMUXERS="aac,ac3,aiff,amr,ape,asf,au,caf,dts,eac3,flac,mov,mp3,ogg,matroska,wav,w64,wv,
+DEMUXERS="gif,apng,mjpeg,mpjpeg,image2,image2pipe,aac,ac3,aiff,amr,ape,asf,au,caf,dts,eac3,flac,mov,mp3,ogg,matroska,wav,w64,wv,
 tta,truehd,voc,xwma,rm,mpc,mpc8,gsm,avi,mpegts,mpegps,flv,nut,dsf,sox,latm,loas"
-PARSERS="aac,aac_latm,ac3,flac,mpegaudio,opus,vorbis,dca,mlp,gsm,amr"
+PARSERS="png,mjpeg,gif,aac,aac_latm,ac3,flac,mpegaudio,opus,vorbis,dca,mlp,gsm,amr"
+make distclean >/dev/null 2>&1 || true
 ./configure --prefix="$PREFIX" \
 	--disable-gpl --disable-nonfree --disable-version3 \
 	--enable-shared --disable-static --disable-programs --disable-doc \
 	--disable-everything --disable-autodetect --disable-network \
-	--disable-avdevice --disable-avfilter --disable-swscale \
-	--enable-avformat --enable-avcodec --enable-swresample \
+	--disable-avdevice --disable-avfilter \
+	--enable-avformat --enable-avcodec --enable-swresample --enable-swscale --enable-zlib \
 	--enable-decoder="${DECODERS//$'\n'/}" --enable-demuxer="${DEMUXERS//$'\n'/}" \
 	--enable-parser="$PARSERS" --enable-protocol=file \
 	--extra-ldflags='-Wl,-rpath,$$ORIGIN'

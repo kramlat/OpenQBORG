@@ -57,28 +57,39 @@ func wall_names() -> Array:
 	return manifest.get("walls", {}).get("strips", [])
 
 
-## Points `level` at the library's floor tiles (all of them).
-func use_floors(level: BorgLevel, tag := "flr") -> void:
+## Points `level` at the library's floor tiles (all of them), the still JPEG
+## set or the animated GIF set (same tiles, water/pad/lava moving).
+func use_floors(level: BorgLevel, tag := "flr", animated := false) -> void:
 	var offsets := PackedInt64Array()
 	for i in floor_names().size():
 		offsets.append(i * 256 * 256)
-	level.set_ext_cfil(tag, manifest.floors.file, offsets)
+	level.set_ext_cfil(tag, manifest.floors.get("animated", manifest.floors.file) if animated else manifest.floors.file, offsets)
 
 
 ## Points `level` at the library's wall strips (256 tall, 1024 wide).
-func use_walls(level: BorgLevel) -> void:
+func use_walls(level: BorgLevel, animated := false) -> void:
 	var offsets := PackedInt64Array()
 	for i in wall_names().size():
 		offsets.append(i * 256 * 1024)
-	level.set_ext_cfil("wal", manifest.walls.file, offsets)
+	level.set_ext_cfil("wal", manifest.walls.get("animated", manifest.walls.file) if animated else manifest.walls.file, offsets)
 
 
 func uses_library_floors(level: BorgLevel, tag := "flr") -> bool:
-	return level.ext_cfil(tag).get("href", "") == manifest.get("floors", {}).get("file", "?")
+	var f: Dictionary = manifest.get("floors", {})
+	return level.ext_cfil(tag).get("href", "") in [f.get("file", "?"), f.get("animated", "?")]
+
+
+func uses_animated_floors(level: BorgLevel, tag := "flr") -> bool:
+	return level.ext_cfil(tag).get("href", "") == manifest.get("floors", {}).get("animated", "?")
 
 
 func uses_library_walls(level: BorgLevel) -> bool:
-	return level.ext_cfil("wal").get("href", "") == manifest.get("walls", {}).get("file", "?")
+	var w: Dictionary = manifest.get("walls", {})
+	return level.ext_cfil("wal").get("href", "") in [w.get("file", "?"), w.get("animated", "?")]
+
+
+func uses_animated_walls(level: BorgLevel) -> bool:
+	return level.ext_cfil("wal").get("href", "") == manifest.get("walls", {}).get("animated", "?")
 
 
 func set_backdrop(level: BorgLevel, entry: Dictionary) -> void:
