@@ -7,6 +7,7 @@ extends Control
 ##   gtw2  shows a page in the side pane while standing in that region;
 ##         leaving it returns to the level's default page (gtw3)
 ##   mid   background music region
+##   js    (OpenQBORG) script trigger id, sent with enter/leave/click events
 ## Clicking a tile activates its gtw/gtw2 link too.
 
 const SIDE_WIDTH := 300
@@ -15,6 +16,7 @@ const HOME_TEXT := "Enter a borg:// or borgs:// address, or a path to a .borg fi
 var fetcher := BorgFetcher.new()
 var pages := LocalPageServer.new()
 var music := BorgMusic.new()
+var scripts := ScriptHost.new()
 var world: BorgWorld
 var walker := BorgWalker.new()
 var current_url := ""
@@ -35,6 +37,7 @@ var _full_page_box: VBoxContainer
 var _last_tile := Vector2i(-1, -1)
 var _music_file := ""
 var _loading := false
+var _world_dirty := false
 
 
 func _ready() -> void:
@@ -43,6 +46,8 @@ func _ready() -> void:
 	add_child(music)
 	music.status_changed.connect(func(t): _status.text = t)
 	_build_ui()
+	add_child(scripts)
+	scripts.request.connect(_on_script_request)
 	var start := _startup_url()
 	if start.is_empty():
 		_status.text = HOME_TEXT
@@ -223,6 +228,7 @@ func _load_world(url: String, push_history: bool) -> void:
 	walker.walk_speed = maxf(1.0, level.speed() / 150.0 * 4.0)
 	walker.place(level.start_tile_position(), level.start_eye_height_px() * BorgWorld.PX, level.start_yaw())
 	_last_tile = Vector2i(-1, -1)
+	scripts.start(world, _player_state())
 	_close_full_page()
 	var title: String = level.meta.get("Title", "")
 	DisplayServer.window_set_title("%s — OpenQBORG" % title if not title.is_empty() else "OpenQBORG")
@@ -313,6 +319,9 @@ func _on_page_request(msg: Dictionary) -> void:
 			if world != null:
 				world.move_tile(str(msg.layer), Vector2i(int(msg.fromX), int(msg.fromY)),
 						Vector2i(int(msg.toX), int(msg.toY)), bool(msg.keepOriginal))
+				var layer: String = BorgWorld.SCRIPT_LAYERS.get(str(msg.layer).to_upper(), str(msg.layer))
+				if world.level.layers.has(layer):
+					scripts.sync_layer(layer, world.level.layers[layer])
 		"tileValue":
 			pass # TODO: sprite height scaling (option 0/3) once a world needs it
 
@@ -322,6 +331,9 @@ func _on_page_request(msg: Dictionary) -> void:
 func _process(_delta: float) -> void:
 	if world == null or _loading:
 		return
+	if _world_dirty:
+		_world_dirty = false
+		world.rebuild()
 	var yaw := walker.yaw
 	var mat: ShaderMaterial = _backdrop.material
 	mat.set_shader_parameter("view_size", Vector2(_viewport.size))
@@ -335,6 +347,10 @@ func _process(_delta: float) -> void:
 	var prev := _last_tile
 	_last_tile = tile
 	var lvl := world.level
+	if scripts.is_running():
+		if world.in_bounds(prev):
+			scripts.send_event("leave", prev, lvl.get_cell("js", prev.x, prev.y), _player_state())
+		scripts.send_event("enter", tile, lvl.get_cell("js", tile.x, tile.y), _player_state())
 	var gtw := lvl.get_cell("gtw", tile.x, tile.y)
 	if gtw > 0 and gtw != lvl.get_cell("gtw", prev.x, prev.y):
 		_follow_gtw(gtw)
@@ -367,6 +383,7 @@ func _on_view_input(event: InputEvent) -> void:
 func _activate_tile(tile: Vector2i) -> void:
 	if world == null or not world.in_bounds(tile):
 		return
+	scripts.send_event("click", tile, world.level.get_cell("js", tile.x, tile.y), _player_state())
 	var gtw := world.level.get_cell("gtw", tile.x, tile.y)
 	var gtw2 := world.level.get_cell("gtw2", tile.x, tile.y)
 	if gtw > 0:
@@ -386,3 +403,33 @@ func _maybe_screenshot() -> void:
 	print("screenshot: status=%s music=%s page=%s" % [_status.text, music.current, _side_page.current_url])
 	get_viewport().get_texture().get_image().save_png(out)
 	get_tree().quit()
+
+
+# --- World scripts (OpenQBORG extension) --------------------------------------
+
+func _player_state() -> Dictionary:
+	return {"x": walker.position.x, "y": walker.position.z, "yaw": walker.yaw}
+
+
+func _on_script_request(msg: Dictionary) -> void:
+	if world == null:
+		return
+	match msg.get("type"):
+		"setTile":
+			# Coalesced: many edits in one frame cost a single rebuild.
+			world.set_tile(str(msg.layer), int(msg.x), int(msg.y), int(msg.value), false)
+			_world_dirty = true
+		"teleport":
+			var yaw = msg.get("yaw")
+			walker.place(Vector2(float(msg.x), float(msg.y)), walker.camera.position.y,
+					walker.yaw if yaw == null else float(yaw))
+		"go":
+			open_url(BorgUrl.join(world.base_url, str(msg.url)))
+		"showPage":
+			_show_full_page(BorgUrl.join(world.base_url, str(msg.url)))
+		"showSidePage":
+			_side_page.navigate(pages.to_served(BorgUrl.join(world.base_url, str(msg.url))))
+		"message":
+			_status.text = str(msg.text)
+		"log":
+			print("[world script] ", msg.text)

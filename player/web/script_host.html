@@ -1,0 +1,92 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>OpenQBORG script host</title>
+<script>
+// Runs a world's <ext><js> scripts in a hidden Chromium page (res:// origin)
+// and gives them the `borg` API. See docs/SCRIPTING.md.
+"use strict";
+(function () {
+  var handlers = {};
+  var layers = {};
+  var world = { width: 16, height: 16, title: "", url: "" };
+  var player = { x: 0, y: 0, yaw: 0 };
+
+  function send(msg) { window.sendIpcMessage(JSON.stringify(msg)); }
+
+  function emit(event, arg) {
+    (handlers[event] || []).forEach(function (fn) {
+      try { fn(arg); } catch (e) { borg.log("error in '" + event + "' handler: " + (e && e.stack || e)); }
+    });
+  }
+
+  function inBounds(x, y) { return x >= 0 && y >= 0 && x < world.width && y < world.height; }
+
+  var borg = {
+    version: "1",
+    get world() { return world; },
+    get player() { return player; },
+
+    // Events: "load", "enter", "leave", "click" -> {x, y, id}; "unload".
+    on: function (event, fn) { (handlers[event] = handlers[event] || []).push(fn); return borg; },
+    off: function (event, fn) {
+      handlers[event] = (handlers[event] || []).filter(function (h) { return h !== fn; });
+      return borg;
+    },
+
+    // Tiles use .borg layer names: wal hgt flr cei obj gtw gtw2 wav mid js ...
+    getTile: function (layer, x, y) {
+      var g = layers[layer];
+      return g && inBounds(x, y) ? g[y * world.width + x] : 0;
+    },
+    setTile: function (layer, x, y, value) {
+      if (!inBounds(x, y)) return;
+      (layers[layer] = layers[layer] || new Array(world.width * world.height).fill(0))[y * world.width + x] = value | 0;
+      send({ type: "setTile", layer: layer, x: x, y: y, value: value | 0 });
+    },
+    moveTile: function (layer, fromX, fromY, toX, toY, keepOriginal) {
+      var v = borg.getTile(layer, fromX, fromY);
+      borg.setTile(layer, toX, toY, v);
+      if (!keepOriginal) borg.setTile(layer, fromX, fromY, layer === "flr" || layer === "cei" ? 255 : 0);
+    },
+
+    teleport: function (x, y, yaw) { send({ type: "teleport", x: +x, y: +y, yaw: yaw === undefined ? null : +yaw }); },
+    go: function (url) { send({ type: "go", url: String(url) }); },
+    showPage: function (url) { send({ type: "showPage", url: String(url) }); },
+    showSidePage: function (url) { send({ type: "showSidePage", url: String(url) }); },
+    message: function (text) { send({ type: "message", text: String(text) }); },
+    log: function () {
+      send({ type: "log", text: Array.prototype.map.call(arguments, String).join(" ") });
+    }
+  };
+  window.borg = borg;
+
+  window.onerror = function (msg, src, line) { borg.log("uncaught: " + msg + " (" + src + ":" + line + ")"); };
+
+  window.ipcMessage.addListener(function (raw) {
+    var msg = JSON.parse(raw);
+    switch (msg.type) {
+      case "init":
+        world = msg.world;
+        layers = msg.layers;
+        player = msg.player;
+        msg.scripts.forEach(function (s) {
+          try {
+            (0, eval)(s.source + "\n//# sourceURL=" + s.name);
+          } catch (e) {
+            borg.log("error loading " + s.name + ": " + (e && e.stack || e));
+          }
+        });
+        emit("load", world);
+        break;
+      case "tiles":  // Godot-side edits (page MoveTile etc.)
+        layers[msg.layer] = msg.grid;
+        break;
+      case "event":
+        player = msg.player;
+        emit(msg.event, { x: msg.x, y: msg.y, id: msg.id });
+        break;
+    }
+  });
+  send({ type: "ready" });
+})();
+</script>

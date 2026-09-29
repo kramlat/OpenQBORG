@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=OpenQBORG Editor
+GenericName=QBORG World Editor
+Comment=Build CYBERWORLD QBORG worlds
+Exec=@EXEC@ %f
+Icon=openqborg-editor
+Terminal=false
+Categories=Development;Graphics;3DGraphics;
+MimeType=application/x-qborg;
