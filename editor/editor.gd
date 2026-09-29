@@ -66,6 +66,7 @@ var _res_list: ItemList
 var _res_edit: LineEdit
 var _res_play: Button
 var _res_script: Button
+var _res_behaviour: Button
 var _tex_edits := {}
 var _tex_counts := {}
 var _code: CodeEdit
@@ -175,7 +176,11 @@ func _build_left_dock() -> Control:
 	_value_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_value_list.fixed_icon_size = Vector2i(32, 32)
 	_value_list.item_selected.connect(func(i): _value_spin.value = _value_list.get_item_metadata(i))
-	_value_list.item_activated.connect(func(i): if _current_layer() in ["wav", "mid"]: _test_value(_value_list.get_item_metadata(i)))
+	_value_list.item_activated.connect(func(i):
+		if _current_layer() in ["wav", "mid"]:
+			_test_value(_value_list.get_item_metadata(i))
+		elif _current_layer() == "obj" and int(_value_list.get_item_metadata(i)) > 0:
+			_edit_sprite_behaviour(int(_value_list.get_item_metadata(i)) - 1))
 	dock.add_child(_value_list)
 	return dock
 
@@ -262,6 +267,14 @@ func _build_right_dock() -> Control:
 	_res_play.text = "▶ Play"
 	_res_play.pressed.connect(_res_toggle_music)
 	buttons.add_child(_res_play)
+	_res_behaviour = Button.new()
+	_res_behaviour.text = "Behaviour…"
+	_res_behaviour.tooltip_text = "Animation and mouse-over / click / proximity behaviours (CWS3)"
+	_res_behaviour.pressed.connect(func():
+		var sel := _res_list.get_selected_items()
+		if sel.size() > 0:
+			_edit_sprite_behaviour(sel[0]))
+	buttons.add_child(_res_behaviour)
 	_res_script = Button.new()
 	_res_script.text = "Edit script"
 	_res_script.pressed.connect(_res_edit_script)
@@ -751,6 +764,9 @@ func _on_view_input(event: InputEvent) -> void:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if event.pressed else Input.MOUSE_MODE_VISIBLE
 		elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			_walker.look(event.relative)
+		elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and world != null:
+			var pos: Vector2 = event.position * Vector2(_viewport.size) / _view_container.size
+			world.click(_walker.camera.project_ray_origin(pos), _walker.camera.project_ray_normal(pos))
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 			_toggle_walk()
 		return
@@ -859,6 +875,7 @@ func _show_tile_status(tile: Vector2i) -> void:
 
 
 func _process(_delta: float) -> void:
+	_update_walk_pointer()
 	# Walk preview: music regions switch as in the player.
 	if _walker != null and world != null:
 		var t := Vector2i(floori(_walker.position.x), floori(_walker.position.z))
@@ -944,6 +961,7 @@ func _refresh_resources() -> void:
 		_res_list.add_item(files[i], icon)
 	_res_play.visible = _res_tag() in ["mid", "wav"]
 	_res_script.visible = _res_tag() == "js"
+	_res_behaviour.visible = _res_tag() == "spr"
 
 
 func _res_set(files: PackedStringArray) -> void:
@@ -1063,6 +1081,8 @@ func _maybe_screenshot() -> void:
 				_layer_list.select(i)
 		_refresh_values()
 		_refresh_overlay()
+	if not OS.get_environment("OPENQBORG_BEHAVIOUR").is_empty():
+		_edit_sprite_behaviour(int(OS.get_environment("OPENQBORG_BEHAVIOUR")))
 	if not OS.get_environment("OPENQBORG_TEST").is_empty():
 		_test_value(int(OS.get_environment("OPENQBORG_TEST")))
 	if not OS.get_environment("OPENQBORG_WALK").is_empty():
@@ -1352,3 +1372,45 @@ func _stop_test() -> void:
 func _update_test_button() -> void:
 	if _test_button != null:
 		_test_button.text = "■ Stop" if not _testing.is_empty() else "▶ Test"
+
+
+# --- Sprite behaviours (CWS3) --------------------------------------------------------
+
+## Opens the behaviour editor for sprite `index` (0-based in <spr>). The
+## sprite must be in the world's own objects/ folder, so the world has to be
+## saved (library sprites are copied in first).
+func _edit_sprite_behaviour(index: int) -> void:
+	var sprites := level.ext_files("spr")
+	if index < 0 or index >= sprites.size():
+		return
+	if path.is_empty():
+		_status.text = "Save the world first: sprite behaviours are saved into its objects/ folder."
+		return
+	if library.available():
+		library.copy_used(level, path.get_base_dir())
+	var file := BorgUrl.resolve_case(path.get_base_dir().path_join("objects").path_join(sprites[index]))
+	var dialog := SpriteBehaviourDialog.new()
+	add_child(dialog)
+	if not dialog.open(file):
+		dialog.queue_free()
+		_status.text = "Can't read objects/" + sprites[index]
+		return
+	dialog.saved.connect(func(p: String):
+		_status.text = "Saved behaviours into objects/" + p.get_file()
+		_reload_world())
+	dialog.visibility_changed.connect(func(): if not dialog.visible: dialog.queue_free())
+	dialog.popup_centered()
+
+
+## Walk preview: the mouse drives mouse-over behaviours like in the player.
+func _update_walk_pointer() -> void:
+	if world == null:
+		return
+	if _walker == null:
+		world.set_pointer(Vector3.ZERO, Vector3.ZERO, false)
+		return
+	var local := _view_container.get_local_mouse_position()
+	var inside := Rect2(Vector2.ZERO, _view_container.size).has_point(local) \
+			and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED
+	var pos := local * Vector2(_viewport.size) / _view_container.size
+	world.set_pointer(_walker.camera.project_ray_origin(pos), _walker.camera.project_ray_normal(pos), inside)

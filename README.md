@@ -62,6 +62,10 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
 * **Picture palettes**: the Floor, Ceiling, wall-texture and Objects layers show
   the world's own tiles, strips and sprites as a grid of previews (names on
   hover), and the Resources list previews sprites too.
+* **Sprite behaviours** (Resources → Sprites → Behaviour…, or double-click a
+  sprite in the Objects palette): edit the animation and the CWS3 mouse-over,
+  click and proximity behaviours with a live preview and a Try button per
+  behaviour. The Walk preview reacts to hover, clicks and proximity.
 * **Audio testing**: ▶ Test (or double-click) on the Sounds and Music palettes
   and ▶ Play in Resources play what a tile would. The Walk preview plays music
   regions and positional sound tiles as the player does, and a "Hear sounds"

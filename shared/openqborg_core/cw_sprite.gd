@@ -40,6 +40,8 @@ var on_east := false
 var has_metadata := false
 ## 3 for CWS3 (behaviour groups present), else 2.
 var version := 2
+## The transparent colour key (the top-left pixel when loaded).
+var key_color := Color(1, 0, 1)
 
 ## CWS3 behaviours, in this order. Each group is {enabled, from, to, repeat,
 ## end, revert}: play frames `from`..`to` (backwards if from > to), `repeat`
@@ -123,6 +125,7 @@ static func decode(bytes: PackedByteArray, name: String) -> CWSprite:
 	var h := mini(img.get_height(), s.cell_height * s.cell_count) if s.cell_height > 0 else img.get_height()
 	if w != img.get_width() or h != img.get_height():
 		img = img.get_region(Rect2i(0, 0, w, h))
+	s.key_color = img.get_pixel(0, 0)
 	# JPEG compression smears the key colour, so allow a little slack there.
 	_apply_color_key(img, 0 if is_png else 24)
 	s.image = img
@@ -282,7 +285,16 @@ static var _crc_table := PackedInt64Array()
 ## the image opaque with a key colour in the top-left pixel, as the original
 ## tools expect.
 func to_png_bytes() -> PackedByteArray:
-	var png := image.save_png_to_buffer()
+	# The original tools expect an opaque image with the key colour where it
+	# is transparent (and in the top-left pixel).
+	var opaque: Image = image.duplicate()
+	opaque.convert(Image.FORMAT_RGBA8)
+	for y in opaque.get_height():
+		for x in opaque.get_width():
+			if opaque.get_pixel(x, y).a < 0.5:
+				opaque.set_pixel(x, y, Color(key_color, 1.0))
+	opaque.convert(Image.FORMAT_RGB8)
+	var png := opaque.save_png_to_buffer()
 	var meta := PackedByteArray()
 	# CWS3 when the sprite has behaviours beyond the default general loop.
 	var cws3 := is_interactive() or (not groups.is_empty() and groups != default_groups())
