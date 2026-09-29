@@ -1,6 +1,5 @@
 # Godot (per project)
 .godot/
-export_presets.cfg
 /build/
 
 # godot-cef runtime (~560 MB of CEF binaries, player only): tools/fetch-assets.sh cef

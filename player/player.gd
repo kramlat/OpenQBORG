@@ -19,12 +19,15 @@ var fetcher := BorgFetcher.new()
 var pages := LocalPageServer.new()
 var music := BorgMusic.new()
 var scripts := ScriptHost.new()
+var bookmarks := Bookmarks.new()
 var world: BorgWorld
 var walker := BorgWalker.new()
 var current_url := ""
 var history: PackedStringArray = []
 
 var _address: LineEdit
+var _bookmark_menu: PopupMenu
+var _open_dialog: FileDialog
 var _back: Button
 var _status: Label
 var _viewport: SubViewport
@@ -43,6 +46,7 @@ var _world_dirty := false
 
 
 func _ready() -> void:
+	DisplayServer.window_set_min_size(Vector2i(800, 500))
 	add_child(fetcher)
 	add_child(pages)
 	add_child(music)
@@ -74,6 +78,7 @@ func _build_ui() -> void:
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.add_theme_constant_override("separation", 0)
 	add_child(root)
+	root.add_child(_build_menu())
 
 	var bar := HBoxContainer.new()
 	root.add_child(bar)
@@ -373,6 +378,14 @@ func _process(_delta: float) -> void:
 func _on_view_input(event: InputEvent) -> void:
 	if world == null:
 		return
+	# Free look: hold the right mouse button and move.
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if event.pressed else Input.MOUSE_MODE_VISIBLE
+		_view_container.grab_focus()
+		return
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		walker.look(event.relative)
+		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		_view_container.grab_focus()
 		var cam := walker.camera
@@ -446,6 +459,7 @@ func _on_script_request(msg: Dictionary) -> void:
 func _show_page_dialog(text: String) -> void:
 	var d := AcceptDialog.new()
 	d.title = world.level.meta.get("Title", "OpenQBORG") if world != null else "OpenQBORG"
+	d.title = "OpenQBORG" if text.begins_with("OpenQBORG") or text.begins_with("Walk:") else d.title
 	d.dialog_text = text
 	d.dialog_autowrap = true
 	d.min_size = Vector2i(360, 0)
@@ -453,3 +467,129 @@ func _show_page_dialog(text: String) -> void:
 	d.canceled.connect(d.queue_free)
 	add_child(d)
 	d.popup_centered()
+
+
+# --- Menu bar ------------------------------------------------------------------
+
+enum MenuId { OPEN_FILE, OPEN_ADDRESS, RELOAD, BACK, QUIT, ADD_BOOKMARK, REMOVE_BOOKMARK,
+		CONTROLS, ABOUT, BOOKMARK_BASE = 1000 }
+
+
+func _build_menu() -> MenuBar:
+	var bar := MenuBar.new()
+	bar.prefer_global_menu = false
+	var file := PopupMenu.new()
+	file.name = "File"
+	file.add_item("Open File…", MenuId.OPEN_FILE)
+	file.set_item_accelerator(file.get_item_index(MenuId.OPEN_FILE), KEY_MASK_CTRL | KEY_O)
+	file.add_item("Open Address…", MenuId.OPEN_ADDRESS)
+	file.set_item_accelerator(file.get_item_index(MenuId.OPEN_ADDRESS), KEY_MASK_CTRL | KEY_L)
+	file.add_separator()
+	file.add_item("Reload", MenuId.RELOAD)
+	file.set_item_accelerator(file.get_item_index(MenuId.RELOAD), KEY_F5)
+	file.add_item("Back to Previous World", MenuId.BACK)
+	file.set_item_accelerator(file.get_item_index(MenuId.BACK), KEY_MASK_ALT | KEY_LEFT)
+	file.add_separator()
+	file.add_item("Quit", MenuId.QUIT)
+	file.set_item_accelerator(file.get_item_index(MenuId.QUIT), KEY_MASK_CTRL | KEY_Q)
+	file.id_pressed.connect(_on_menu)
+	bar.add_child(file)
+
+	_bookmark_menu = PopupMenu.new()
+	_bookmark_menu.name = "Bookmarks"
+	_bookmark_menu.id_pressed.connect(_on_menu)
+	_bookmark_menu.about_to_popup.connect(_refresh_bookmark_menu)
+	bar.add_child(_bookmark_menu)
+	bookmarks.load_or_seed()
+	bookmarks.changed.connect(_refresh_bookmark_menu)
+	_refresh_bookmark_menu()
+
+	var help := PopupMenu.new()
+	help.name = "Help"
+	help.add_item("Controls", MenuId.CONTROLS)
+	help.add_item("About OpenQBORG", MenuId.ABOUT)
+	help.id_pressed.connect(_on_menu)
+	bar.add_child(help)
+
+	_open_dialog = FileDialog.new()
+	_open_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_open_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	_open_dialog.use_native_dialog = true
+	_open_dialog.filters = PackedStringArray(["*.borg ; QBORG worlds"])
+	_open_dialog.file_selected.connect(func(p: String): open_url(p))
+	add_child(_open_dialog)
+	return bar
+
+
+func _refresh_bookmark_menu() -> void:
+	var m := _bookmark_menu
+	m.clear()
+	var marked := bookmarks.index_of(current_url) >= 0
+	m.add_item("Bookmark This World", MenuId.ADD_BOOKMARK)
+	m.set_item_accelerator(0, KEY_MASK_CTRL | KEY_D)
+	m.set_item_disabled(0, current_url.is_empty() or marked)
+	m.add_item("Remove This Bookmark", MenuId.REMOVE_BOOKMARK)
+	m.set_item_disabled(1, not marked)
+	if not bookmarks.items.is_empty():
+		m.add_separator()
+	for i in bookmarks.items.size():
+		var b: Dictionary = bookmarks.items[i]
+		m.add_item(b.title, MenuId.BOOKMARK_BASE + i)
+		m.set_item_tooltip(m.get_item_count() - 1, BorgUrl.to_display(b.url))
+
+
+func _on_menu(id: int) -> void:
+	match id:
+		MenuId.OPEN_FILE:
+			_open_dialog.popup_centered_ratio(0.6)
+		MenuId.OPEN_ADDRESS:
+			_address.grab_focus()
+			_address.select_all()
+		MenuId.RELOAD:
+			if not current_url.is_empty():
+				_load_world(current_url, false)
+		MenuId.BACK:
+			go_back()
+		MenuId.QUIT:
+			get_tree().quit()
+		MenuId.ADD_BOOKMARK:
+			if world != null:
+				bookmarks.add(world.level.meta.get("Title", ""), current_url)
+				_status.text = "Bookmarked " + BorgUrl.to_display(current_url)
+		MenuId.REMOVE_BOOKMARK:
+			bookmarks.remove(current_url)
+		MenuId.CONTROLS:
+			_show_page_dialog("Walk: ↑ ↓ or W S     Turn: ← →     Strafe: A D\nLook up/down: PgUp PgDn\n"
+					+ "Click a tile (or the nav map) to follow its link.")
+		MenuId.ABOUT:
+			_show_page_dialog("OpenQBORG Player\nAn open source player for CYBERWORLD QBORG worlds.\n\n"
+					+ "Free software under the GNU GPL v3 or later.\nhttps://github.com/kramlat/OpenQBORG\n\n"
+					+ "Page engine: %s\nExtra audio formats: %s" % [
+						"godot-cef (Chromium)" if HtmlView.cef_available() else "not installed",
+						"FFmpeg " + ClassDB.class_call_static("FFmpegAudioDecoder", "ffmpeg_version")
+								if BorgAudio.has_ffmpeg() else "not installed"])
+		_:
+			if id >= MenuId.BOOKMARK_BASE and id - MenuId.BOOKMARK_BASE < bookmarks.items.size():
+				open_url(bookmarks.items[id - MenuId.BOOKMARK_BASE].url)
+
+
+func _shortcut_input(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	var k := event as InputEventKey
+	var id := -1
+	if k.ctrl_pressed and k.keycode == KEY_O:
+		id = MenuId.OPEN_FILE
+	elif k.ctrl_pressed and k.keycode == KEY_L:
+		id = MenuId.OPEN_ADDRESS
+	elif k.ctrl_pressed and k.keycode == KEY_D:
+		id = MenuId.ADD_BOOKMARK
+	elif k.ctrl_pressed and k.keycode == KEY_Q:
+		id = MenuId.QUIT
+	elif k.keycode == KEY_F5:
+		id = MenuId.RELOAD
+	elif k.alt_pressed and k.keycode == KEY_LEFT:
+		id = MenuId.BACK
+	if id >= 0:
+		_on_menu(id)
+		get_viewport().set_input_as_handled()

@@ -24,6 +24,7 @@ config/icon="res://icon.svg"
 
 window/size/viewport_width=1024
 window/size/viewport_height=640
+window/size/resizable=true
 window/stretch/aspect="expand"
 
 [godot_cef]

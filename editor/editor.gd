@@ -67,6 +67,7 @@ var _code_label: Label
 
 
 func _ready() -> void:
+	DisplayServer.window_set_min_size(Vector2i(960, 600))
 	add_child(fetcher)
 	add_child(music)
 	music.status_changed.connect(func(t): _status.text = t)
@@ -624,6 +625,10 @@ func _on_view_input(event: InputEvent) -> void:
 	if level == null:
 		return
 	if _walker != null:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if event.pressed else Input.MOUSE_MODE_VISIBLE
+		elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			_walker.look(event.relative)
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 			_toggle_walk()
 		return

@@ -4,11 +4,16 @@ class_name BorgWalker
 extends CharacterBody3D
 ## First-person walker with the original QBORG controls:
 ## Up/Down (or W/S) walk, Left/Right turn, A/D strafe, PgUp/PgDn look.
+## Free look (an OpenQBORG addition): feed mouse motion to look(), e.g.
+## while the right button is held. The original browser stopped at ±36°;
+## free look goes further.
 
 const RADIUS := 0.12
 const TURN_SPEED := 1.4
 const PITCH_SPEED := 0.9
-const MAX_PITCH := PI / 5
+const MAX_PITCH := deg_to_rad(80.0)
+## Radians per pixel of mouse motion.
+const MOUSE_SENSITIVITY := 0.0035
 
 ## Tiles per second. Set from the level's SP value.
 var walk_speed := 4.0
@@ -39,6 +44,13 @@ func place(pos: Vector2, eye_height: float, p_yaw: float) -> void:
 	camera.position.y = maxf(eye_height, 0.05)
 	yaw = p_yaw
 	pitch = 0.0
+	_apply_rotation()
+
+
+## Free look: mouse motion in pixels.
+func look(relative: Vector2) -> void:
+	yaw -= relative.x * MOUSE_SENSITIVITY
+	pitch = clampf(pitch - relative.y * MOUSE_SENSITIVITY, -MAX_PITCH, MAX_PITCH)
 	_apply_rotation()
 
 

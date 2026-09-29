@@ -8,3 +8,12 @@ linux.x86_64 = "bin/libopenqborg_audio.linux.x86_64.so"
 linux.arm64 = "bin/libopenqborg_audio.linux.arm64.so"
 windows.x86_64 = "bin/libopenqborg_audio.windows.x86_64.dll"
 macos = "bin/libopenqborg_audio.macos.arm64.dylib"
+
+[dependencies]
+; The LGPL FFmpeg bundled by tools/build-audio-ext.sh --lgpl, found via $ORIGIN.
+linux.x86_64 = {
+	"bin/libavformat.so.62" : "",
+	"bin/libavcodec.so.62" : "",
+	"bin/libswresample.so.6" : "",
+	"bin/libavutil.so.60" : ""
+}
