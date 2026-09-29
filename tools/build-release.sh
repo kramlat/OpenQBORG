@@ -17,6 +17,7 @@ OUT="$ROOT/build/linux"
 
 [[ -d "$ROOT/player/addons/godot_cef/bin" ]] || { echo "godot-cef missing: tools/fetch-assets.sh cef" >&2; exit 1; }
 ls "$ROOT"/soundfonts/*.sf2 >/dev/null 2>&1 || echo "warning: no SoundFont; MIDI music will be silent (fetch-assets.sh soundfont)" >&2
+[[ -f "$ROOT/player/web/ruffle/ruffle.js" ]] || echo "warning: no Ruffle; Flash in pages won't play (fetch-assets.sh ruffle)" >&2
 if ! ls "$ROOT"/shared/openqborg_media/bin/libavformat.so.* >/dev/null 2>&1; then
 	"$ROOT/tools/build-media-ext.sh" --lgpl
 fi

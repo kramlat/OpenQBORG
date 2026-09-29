@@ -7,6 +7,7 @@
 #                                              from the newest upstream release <= contrib/
 #   tools/fetch-assets.sh cef --source        build it from contrib/godot-cef (Rust, via mise)
 #   tools/fetch-assets.sh cef DIR             copy it from another godot-cef checkout/build
+#   tools/fetch-assets.sh ruffle             Ruffle Flash emulator (self-hosted web build) -> player/web/ruffle
 #   tools/fetch-assets.sh all
 set -euo pipefail
 
@@ -33,6 +34,21 @@ fetch_soundfont() {
 	curl -fL --progress-bar -o "$out.part" "$SF_URL"
 	mv "$out.part" "$out"
 	echo "Installed $out"
+}
+
+fetch_ruffle() {
+	# Ruffle publishes nightlies only; take the newest self-hosted web build.
+	local dest="$ROOT/player/web/ruffle" url tmp
+	url="$(curl -fsSL https://api.github.com/repos/ruffle-rs/ruffle/releases | sed -n "s/.*\"browser_download_url\": *\"\([^\"]*web-selfhosted.zip\)\".*/\1/p" | head -1)"
+	[[ -n "$url" ]] || { echo "no Ruffle web build found" >&2; exit 1; }
+	tmp="$(mktemp -d)"
+	echo "Downloading $(basename "$url") ..."
+	curl -fL --progress-bar -o "$tmp/ruffle.zip" "$url"
+	rm -rf "$dest"
+	mkdir -p "$dest"
+	unzip -q "$tmp/ruffle.zip" -x "*.map" -d "$dest"
+	rm -rf "$tmp"
+	echo "Installed Ruffle into $dest ($(du -sh "$dest" | cut -f1))"
 }
 
 fetch_cef() {
@@ -111,6 +127,7 @@ build_cef_source() {
 case "${1:-}" in
 	soundfont) fetch_soundfont ;;
 	cef) fetch_cef "${2:-}" ;;
-	all) fetch_soundfont; fetch_cef "${2:-}" ;;
+	ruffle) fetch_ruffle ;;
+	all) fetch_soundfont; fetch_ruffle; fetch_cef "${2:-}" ;;
 	*) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

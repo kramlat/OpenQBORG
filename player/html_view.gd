@@ -15,6 +15,8 @@ signal address_changed(url: String)
 signal title_changed(title: String)
 
 const BRIDGE_SCRIPT := "res://web/borg_bridge.js"
+## Where the player serves Ruffle; set before pages are created ("" = none).
+static var ruffle_base := ""
 
 var current_url := ""
 var borg_location := ""
@@ -34,7 +36,9 @@ func _ready() -> void:
 		_cef = ClassDB.instantiate("CefTexture")
 		_cef.set("popup_policy", 2) # SIGNAL_ONLY: we decide where popups go
 		_cef.set("background_color", Color.WHITE)
-		_cef.set("preload_script_path", BRIDGE_SCRIPT)
+		# The bridge script, told where Ruffle is (for Flash in pages).
+		_cef.set("preload_script", "window.__OQB_RUFFLE = %s;\n" % JSON.stringify(ruffle_base)
+				+ FileAccess.get_file_as_string(BRIDGE_SCRIPT))
 		_cef.set("url", "about:blank")
 		_cef.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_cef.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -46,6 +50,8 @@ func _ready() -> void:
 		_cef.connect("load_finished", _on_load_finished)
 		_cef.connect("load_started", _on_load_started)
 		_cef.connect("download_requested", _on_download_requested)
+		_cef.connect("console_message", func(level: int, message: String, source: String, line: int):
+			print_verbose("page console [%d] %s (%s:%d)" % [level, message, source.get_file(), line]))
 		_cef.connect("title_changed", func(t: String): title = t; title_changed.emit(t))
 		_audio = attach_audio(_cef, self)
 	else:

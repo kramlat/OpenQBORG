@@ -33,6 +33,7 @@ project/assembly_name="OpenQBORG Player"
 [godot_cef]
 
 audio/enable_audio_capture=true
+advanced/custom_command_line_switches="autoplay-policy=no-user-gesture-required"
 
 [input]
 

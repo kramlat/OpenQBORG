@@ -56,6 +56,7 @@ func _ready() -> void:
 	add_child(pages)
 	add_child(music)
 	music.status_changed.connect(func(t): _status.text = t)
+	HtmlView.ruffle_base = pages.ruffle_base()
 	_build_ui()
 	add_child(scripts)
 	scripts.request.connect(_on_script_request)
@@ -211,8 +212,15 @@ func open_url(input: String, context := "") -> void:
 		BorgUrl.Kind.WORLD:
 			# borg:// addresses, local paths and *.borg are worlds; any other
 			# http(s) address is a web page for the built-in browser.
-			var web: bool = not explicit_world and not BorgUrl.is_local(c.url) and not HtmlView.is_world_url(c.url)
+			var lower_url: String = str(c.url).to_lower().get_slice("?", 0).get_slice("#", 0)
+			var page: bool = lower_url.ends_with(".html") or lower_url.ends_with(".htm")
+			# An .html address is a page even as borg:// (Flash intros navigate
+			# to their own page that way).
+			var web: bool = page or (not explicit_world and not HtmlView.is_world_url(c.url) \
+					and not BorgUrl.is_local(c.url))
 			if web:
+				if _browser.visible and pages.to_local(_browser.url()) == pages.to_local(c.url):
+					return # already showing
 				_show_full_page(c.url)
 			else:
 				_load_world(c.url, true)

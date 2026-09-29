@@ -14,6 +14,7 @@ const MIME := {
 	"json": "application/json", "gif": "image/gif", "png": "image/png", "jpg": "image/jpeg",
 	"jpeg": "image/jpeg", "svg": "image/svg+xml", "webp": "image/webp", "ico": "image/x-icon",
 	"wav": "audio/wav", "mp3": "audio/mpeg", "ogg": "audio/ogg", "mid": "audio/midi",
+	"wasm": "application/wasm", "mjs": "text/javascript",
 	"swf": "application/x-shockwave-flash", "txt": "text/plain", "xml": "text/xml",
 	"borg": "text/xml", "url": "text/plain",
 }
@@ -22,6 +23,15 @@ var _server := TCPServer.new()
 var _token := ""
 var _roots: PackedStringArray = []
 var _clients: Array = []
+## Where Ruffle (res://web/ruffle, tools/fetch-assets.sh ruffle) is served.
+const RUFFLE_DIR := "__ruffle__"
+
+
+## Base URL of the served Ruffle build, or "" when it isn't installed.
+func ruffle_base() -> String:
+	if not is_running() or not FileAccess.file_exists("res://web/ruffle/ruffle.js"):
+		return ""
+	return origin() + "/" + RUFFLE_DIR + "/"
 
 
 func _ready() -> void:
@@ -94,11 +104,28 @@ func _process(_delta: float) -> void:
 
 func _respond(peer: StreamPeerTCP, request_line: String) -> void:
 	var parts := request_line.split(" ")
+	var target := parts[1].get_slice("?", 0).get_slice("#", 0) if parts.size() >= 2 else ""
+	var prefix := "/" + _token + "/"
+	var ruffle_prefix := prefix + RUFFLE_DIR + "/"
+	# Ruffle is fetched cross-origin by pages from any world (even https ones:
+	# Chromium treats loopback as secure), so answer CORS / private-network
+	# preflights for it.
+	if parts.size() >= 2 and parts[0] == "OPTIONS" and target.begins_with(ruffle_prefix):
+		_send(peer, 204, "text/plain", PackedByteArray(), true)
+		return
 	if parts.size() < 2 or not (parts[0] == "GET" or parts[0] == "HEAD"):
 		_send(peer, 405, "text/plain", "Method not allowed".to_utf8_buffer())
 		return
-	var target := parts[1].get_slice("?", 0).get_slice("#", 0)
-	var prefix := "/" + _token + "/"
+	if target.begins_with(ruffle_prefix):
+		# Served from the player's own resources, so this works in exports too.
+		var file := target.substr(ruffle_prefix.length()).uri_decode()
+		var res := "res://web/ruffle/" + file.get_file()
+		if file.contains("/") or not FileAccess.file_exists(res):
+			_send(peer, 404, "text/plain", "Not found".to_utf8_buffer(), true)
+			return
+		var data := FileAccess.get_file_as_bytes(res) if parts[0] == "GET" else PackedByteArray()
+		_send(peer, 200, MIME.get(file.get_extension().to_lower(), "application/octet-stream"), data, true)
+		return
 	if not target.begins_with(prefix):
 		_send(peer, 404, "text/plain", "Not found".to_utf8_buffer())
 		return
@@ -116,10 +143,16 @@ func _respond(peer: StreamPeerTCP, request_line: String) -> void:
 	_send(peer, 200, MIME.get(path.get_extension().to_lower(), "application/octet-stream"), body)
 
 
-func _send(peer: StreamPeerTCP, code: int, mime: String, body: PackedByteArray) -> void:
-	var reason: String = {200: "OK", 403: "Forbidden", 404: "Not Found", 405: "Method Not Allowed"}.get(code, "")
-	var head := "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n" \
-			% [code, reason, mime, body.size()]
+func _send(peer: StreamPeerTCP, code: int, mime: String, body: PackedByteArray, shared := false) -> void:
+	var reason: String = {200: "OK", 204: "No Content", 403: "Forbidden", 404: "Not Found",
+			405: "Method Not Allowed"}.get(code, "")
+	var cors := ""
+	if shared:
+		cors = "Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n" \
+				+ "Access-Control-Allow-Headers: *\r\nAccess-Control-Allow-Private-Network: true\r\n" \
+				+ "Cross-Origin-Resource-Policy: cross-origin\r\n"
+	var head := "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nCache-Control: no-cache\r\n%sConnection: close\r\n\r\n" \
+			% [code, reason, mime, body.size(), cors]
 	peer.set_no_delay(true)
 	peer.put_data(head.to_ascii_buffer())
 	var sent := 0

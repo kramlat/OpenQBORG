@@ -39,6 +39,9 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
   `prompt()` appear as Godot dialogs (they can't block, so `confirm()` answers
   OK and `prompt()` returns its default). Pages from
   local worlds are served over loopback so their cookie-based save games work.
+* **Flash** in world pages plays through [Ruffle](https://ruffle.rs), an open source
+  Flash emulator in WebAssembly, sandboxed inside Chromium (`tools/fetch-assets.sh
+  ruffle`). It loads only on pages that contain Flash.
 * **Animated GIF, APNG and Motion JPEG sprites**: frames, timing and
   transparency come from the file (an APNG can still carry CWS3 behaviours).
 * **Animated textures**: floor, ceiling and wall images, the backdrop and the
@@ -106,6 +109,7 @@ Requires Godot **4.5+** (developed on 4.7).
 git clone --recursive https://github.com/kramlat/OpenQBORG
 cd OpenQBORG
 tools/fetch-assets.sh soundfont   # GeneralUser GS, ~31 MB (MIDI music)
+tools/fetch-assets.sh ruffle      # Ruffle Flash emulator for pages, ~28 MB
 tools/fetch-assets.sh cef         # godot-cef runtime for the player, ~560 MB
                                   # (or build it from source: tools/fetch-assets.sh cef --source)
 tools/build-media-ext.sh          # FFmpeg media extension (AAC, Opus, FLAC, ...,
@@ -210,7 +214,6 @@ layer must come out byte-identical, and every sprite must decode.
 ## Not done yet
 
 * `window.external.tileValue()` (sprite resizing from pages)
-* Flash (`.swf`) in pages. [Ruffle](https://ruffle.rs) is the likely route.
 * One player window per `borg://` link (there is no single-instance handoff yet)
 
 ## Credits

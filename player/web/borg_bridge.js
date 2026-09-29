@@ -64,6 +64,39 @@
   document.addEventListener("DOMContentLoaded", wrapHelpers);
   window.addEventListener("load", wrapHelpers);
 
+  // --- Flash, via Ruffle ----------------------------------------------------
+  // The player serves Ruffle (an open source Flash emulator in WebAssembly)
+  // and passes its address in __OQB_RUFFLE. Ruffle is only loaded once a
+  // page actually contains Flash; its polyfill then replaces every
+  // <object>/<embed> SWF, including ones added later by document.write().
+  var ruffleBase = window.__OQB_RUFFLE;
+  var ruffleLoaded = false;
+  var FLASH = 'embed[src$=".swf" i], embed[type="application/x-shockwave-flash" i],' +
+      ' object[data$=".swf" i], object[type="application/x-shockwave-flash" i],' +
+      ' object[classid*="D27CDB6E" i], param[name="movie" i][value$=".swf" i]';
+  function loadRuffle() {
+    if (ruffleLoaded || !ruffleBase) return;
+    ruffleLoaded = true;
+    window.RufflePlayer = window.RufflePlayer || {};
+    window.RufflePlayer.config = Object.assign({
+      publicPath: ruffleBase, polyfills: true, autoplay: "on", unmuteOverlay: "hidden",
+      splashScreen: false, letterbox: "on", warnOnUnsupportedContent: false,
+      showSwfDownload: false, contextMenu: "rightClickOnly"
+    }, window.RufflePlayer.config || {});
+    var s = document.createElement("script");
+    s.src = ruffleBase + "ruffle.js";
+    (document.head || document.documentElement).appendChild(s);
+  }
+  if (ruffleBase) {
+    var watch = new MutationObserver(function () {
+      if (!ruffleLoaded && document.querySelector && document.querySelector(FLASH)) {
+        loadRuffle();
+        watch.disconnect();
+      }
+    });
+    watch.observe(document, { childList: true, subtree: true });
+  }
+
   // --- JS dialogs -----------------------------------------------------------
   // Native JS dialogs crash godot-cef on current Godot builds, and old pages
   // use them freely. Show them as Godot dialogs instead. They can't block,
