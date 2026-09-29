@@ -493,6 +493,25 @@ func _sprite(name: String, frames: Array[Image], world: Vector2i, z := 0, anim_m
 
 ## Writes objects/<file> and lists it in library.json. `blocks`: the editor
 ## also marks the tile unwalkable when placing it.
+## Writes an animated GIF as a sprite (no CWS block: OpenQBORG takes frames,
+## timing and size from the GIF itself) and lists it in library.json.
+func _save_gif_sprite(file: String, frames: Array[Image], ms: int, title: String, category: String, blocks: bool) -> void:
+	if not have_ffmpeg:
+		_save_sprite(file, _sprite(file, frames, frames[0].get_size() * 2, 0, ms), title, category, blocks)
+		return
+	var tmp := OS.get_cache_dir().path_join("openqborg-gif")
+	DirAccess.make_dir_recursive_absolute(tmp)
+	for i in frames.size():
+		frames[i].save_png(tmp.path_join("f%02d.png" % i))
+	OS.execute("ffmpeg", ["-loglevel", "error", "-y", "-framerate", "1000/%d" % ms, "-i", tmp.path_join("f%02d.png"),
+			"-vf", "split[a][b];[a]palettegen=reserve_transparent=0[p];[b][p]paletteuse=dither=none",
+			"-fflags", "+bitexact", "-loop", "0", "-f", "gif", out.path_join("objects").path_join(file)], [])
+	for i in frames.size():
+		DirAccess.remove_absolute(tmp.path_join("f%02d.png" % i))
+	if out == lib:
+		manifest.sprites.append({"file": file, "name": title, "category": category, "blocks": blocks})
+
+
 func _save_sprite(file: String, s: CWSprite, title := "", category := "Objects", blocks := false) -> void:
 	_write("objects/" + file, s.to_png_bytes())
 	if out == lib:
@@ -587,6 +606,20 @@ func _make_sprites() -> void:
 		_fill_circle(t, Vector2(19, 19), 5, Color("#f0dcff"))
 		orb.append(t)
 	_save_sprite("orb.sprite", _sprite("orb", orb, Vector2i(72, 72), 50, 150), "Floating orb (animated)", "Features")
+
+	# Campfire: an animated GIF sprite (OpenQBORG reads GIF/APNG/MJPEG sprites).
+	var fire_frames: Array[Image] = []
+	for f in 6:
+		var t := _canvas(80, 96)
+		for k in 5:
+			var ang := k * 0.6 - 1.2
+			t.fill_rect(Rect2i(int(38 + sin(ang) * 26), 80 + int(cos(ang) * 4), 24, 7), Color("#5b3a1e"))
+		var sway := sin(f * TAU / 6.0) * 4.0
+		_fill_ellipse(t, Vector2(40 + sway, 56), 22, 30 + f % 2 * 3, Color("#e2461b"))
+		_fill_ellipse(t, Vector2(40 - sway * 0.6, 62), 14, 20, Color("#ff9a1f"))
+		_fill_ellipse(t, Vector2(40 + sway * 0.3, 68), 7, 11, Color("#ffe066"))
+		fire_frames.append(t)
+	_save_gif_sprite("campfire.sprite", fire_frames, 110, "Campfire (animated GIF)", "Lights", true)
 
 	# Rock
 	var rock := _canvas(96, 64)
@@ -1136,7 +1169,7 @@ func _make_hello() -> void:
 func _make_sprawl() -> void:
 	var n := 128
 	var level := _base_level(n, n, "The Sprawl", "OpenQBORG example: 128x128 island (<size> extension)")
-	level.set_ext_files("spr", PackedStringArray(["tree.sprite", "portal.sprite", "torch.sprite"]))
+	level.set_ext_files("spr", PackedStringArray(["tree.sprite", "portal.sprite", "torch.sprite", "campfire.sprite"]))
 	var terrain := _noise(7, 0.035)
 	var c := Vector2(n / 2.0, n / 2.0)
 	for y in n:
@@ -1190,6 +1223,11 @@ func _make_sprawl() -> void:
 	for y in n:
 		for x in n:
 			level.set_cell("mid", x, y, 1)
+	# A campfire (an animated GIF sprite) beside the path, just ahead.
+	var fire := Vector2i(c) + Vector2i(-1, -3)
+	level.set_cell("obj", fire.x, fire.y, 4)
+	level.set_cell("wal", fire.x, fire.y, 1)
+	level.set_cell("flr", fire.x, fire.y, Floor.DIRT)
 	var home := Vector2i(c) + Vector2i(1, -4)
 	level.set_cell("obj", home.x, home.y, 2)
 	level.set_cell("gtw", home.x, home.y, 1)

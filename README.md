@@ -39,6 +39,8 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
   `prompt()` appear as Godot dialogs (they can't block, so `confirm()` answers
   OK and `prompt()` returns its default). Pages from
   local worlds are served over loopback so their cookie-based save games work.
+* **Animated GIF, APNG and Motion JPEG sprites**: frames, timing and
+  transparency come from the file (an APNG can still carry CWS3 behaviours).
 * **Animated textures**: floor, ceiling and wall images, the backdrop and the
   emblem can be animated GIFs (as in the original), APNGs or Motion JPEGs.
   Floors and ceilings step through a texture array in the shader, so it stays
@@ -74,7 +76,7 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
   script triggers), undo/redo, and world properties.
 * Resource lists (sprites, links, sounds, music, scripts, nav map, emblem),
   texture references with automatic tile detection, and MIDI preview.
-* **Starter library** (Library tab): 13 sprites, 11 floor tiles, 7 ceiling tiles and 7 wall strips (floors and
+* **Starter library** (Library tab): 14 sprites (one an animated GIF campfire), 11 floor tiles, 7 ceiling tiles and 7 wall strips (floors and
   walls in a still set and an animated GIF set with moving water, lava and a
   waterfall), a sky backdrop, 6 sound loops, 3 music tracks, and page and script
   templates, all original and free to use. New worlds start furnished from it,

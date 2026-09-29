@@ -224,6 +224,11 @@ func _test_frames_dir(dir_path: String) -> void:
 			check(img.get_size() == Vector2i(256, 512), "%s frame size" % f)
 			print("%-14s %-6s -> %2d frame(s), %4d ms loop, %s" % [f, kind, frames.images.size(),
 					frames.total_ms, img.get_size()])
+	# Animated files double as sprites.
+	for f in ["anim.gif", "anim.apng", "anim.mjpeg"]:
+		var s := CWSprite.decode(FileAccess.get_file_as_bytes(dir_path.path_join(f)), f)
+		check(s != null and s.cell_count == 6 and s.animate_on_load and s.cell_height == 512,
+				"%s decodes as a 6-frame animated sprite" % f)
 	# Plain JPEGs must not be mistaken for Motion JPEG.
 	check(BorgFrames.sniff(FileAccess.get_file_as_bytes(dir_path.path_join("still.jpg"))) == "image",
 			"single JPEG is not MJPEG")

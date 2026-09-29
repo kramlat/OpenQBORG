@@ -87,6 +87,16 @@ static func decode(bytes: PackedByteArray, name: String) -> CWSprite:
 		return s
 	if bytes.size() < 4:
 		return null
+	# Animated GIF / APNG / Motion JPEG as a sprite (an OpenQBORG extension):
+	# frames and timing come from the file; an APNG may still carry cxBX.
+	var anim := BorgFrames.sniff(bytes)
+	if anim in ["gif", "apng", "mjpeg", "video"]:
+		var frames := BorgFrames.decode(bytes)
+		if frames != null and (frames.images.size() > 1 or anim == "gif"):
+			if anim == "apng":
+				s._scan_png(bytes)
+			s._from_frames(frames, 0 if anim != "mjpeg" and anim != "video" else 24)
+			return s
 	var is_png := bytes[0] == 0x89 and bytes[1] == 0x50 and bytes[2] == 0x4e and bytes[3] == 0x47
 	var is_jpeg := bytes[0] == 0xff and bytes[1] == 0xd8
 	var img := Image.new()
@@ -349,3 +359,47 @@ static func _crc32(data: PackedByteArray) -> int:
 	for b in data:
 		crc = _crc_table[(crc ^ b) & 0xff] ^ (crc >> 8)
 	return crc ^ 0xffffffff
+
+
+## Builds the sprite from decoded animation frames: frames stacked
+## vertically, one cell each, timed by the file. Metadata already read (an
+## APNG's cxBX) keeps its placement and behaviours.
+func _from_frames(frames: BorgFrames, key_tolerance: int) -> void:
+	var first := frames.first()
+	var w := first.get_width()
+	var h := first.get_height()
+	var n := frames.images.size()
+	var img := Image.create(w, h * n, false, Image.FORMAT_RGBA8)
+	for i in n:
+		var f := frames.images[i]
+		f.convert(Image.FORMAT_RGBA8)
+		img.blit_rect(f, Rect2i(0, 0, w, h), Vector2i(0, i * h))
+	if not has_metadata:
+		world_width = w
+		world_height = h
+		world_x = 128
+		world_y = 128
+		world_z = 0
+		animate_on_load = n > 1
+	cell_width = w
+	cell_height = h
+	cell_count = n
+	frame_count = n
+	frame_durations = PackedInt32Array()
+	for d in frames.delays:
+		frame_durations.append(maxi(10, d))
+	if groups.is_empty() or groups[0].to >= n:
+		groups = default_groups()
+	# Real transparency when the file has it, else the top-left colour key.
+	var has_alpha := false
+	for y in range(0, h, 4):
+		for x in range(0, w, 4):
+			if first.get_pixel(x, y).a < 0.99:
+				has_alpha = true
+				break
+		if has_alpha:
+			break
+	key_color = img.get_pixel(0, 0)
+	if not has_alpha:
+		_apply_color_key(img, key_tolerance)
+	image = img

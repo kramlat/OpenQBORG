@@ -141,6 +141,12 @@
 		},
 		{
 			"blocks": true,
+			"category": "Lights",
+			"file": "campfire.sprite",
+			"name": "Campfire (animated GIF)"
+		},
+		{
+			"blocks": true,
 			"category": "Nature",
 			"file": "rock.sprite",
 			"name": "Rock"
