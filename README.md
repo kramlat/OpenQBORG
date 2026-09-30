@@ -49,6 +49,10 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
 * Links behave as they did originally: doorways (`gtw`), side-pane info
   pages (`gtw2`/`gtw3`), `.url` shortcuts, and `borg://cmd.prev` /
   `borg://cmd.web@`.
+* Pages drive the world through `window.external` as they did in IE:
+  `MoveTile()`, `TileValue()` (sprite size, visibility and animation, wall
+  heights, how links fire, entry points), `UserToPoint()` and the rest, with
+  getters answering at once. See [docs/FORMAT.md](docs/FORMAT.md).
 * **HTML5 world pages** rendered by Chromium via
   [godot-cef](https://github.com/dsh0416/godot-cef). The original browser
   embedded IE-era HTML; pages now get modern HTML, CSS and JS, plus the
@@ -239,7 +243,6 @@ layer must come out byte-identical, and every sprite must decode.
 
 ## Not done yet
 
-* `window.external.tileValue()` (sprite resizing from pages)
 * One player window per `borg://` link (there is no single-instance handoff yet)
 
 ## Credits
