@@ -3,8 +3,13 @@ Type=Application
 Name=OpenQBORG Player
 GenericName=QBORG World Player
 Comment=Walk through CYBERWORLD QBORG worlds (borg:// and borgs://)
-Exec=@EXEC@ %u
+Exec=@EXEC@ %U
 Icon=@ICON@
 Terminal=false
 Categories=Network;Game;
 MimeType=x-scheme-handler/borg;x-scheme-handler/borgs;application/x-qborg;
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=@EXEC@ --new-window

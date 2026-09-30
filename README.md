@@ -21,9 +21,16 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
   reload. Links to `borg://` or `.borg` addresses on any site lead back into
   3D, even when the server sends the `.borg` as a download. Only a world's own
   pages may change it through `window.external`.
-* A menu bar with **File** (open a .borg file, open an address, reload, back),
-  **Bookmarks** and **Help**. The window resizes freely, and the side pane is
-  on a draggable splitter.
+* **Tabs**, as in current browsers, sharing one row with the **File**,
+  **Bookmarks** and **Help** menus: Ctrl+T, Ctrl+W (or middle-click),
+  Ctrl+Tab, drag to reorder. Each tab has its own world, pages and history;
+  tabs in the background pause and fall silent. Links a page opens in a new
+  window (a clicked popup) open as tabs. The window resizes freely, and the
+  side pane is on a draggable splitter.
+* **One window**: opening a `borg://` link or a `.borg` file while the player
+  is running adds a tab to it instead of starting another player (the
+  launcher's "New Window" action, or `--new-window`, still starts one).
+  Several addresses on the command line open as several tabs.
 * **Bookmarks** come with the example worlds and with original CYBERWORLD
   worlds that still survive online in the Internet Archive's Wayback Machine
   (Zeta Quest 3D, complete; the CYBERWORLD Olympiad, partly archived) or
@@ -240,10 +247,6 @@ godot --headless --path player --script res://addons/openqborg_core/tests/run_te
 
 With a world folder, every `.borg` in it is parsed and re-encoded. Each map
 layer must come out byte-identical, and every sprite must decode.
-
-## Not done yet
-
-* One player window per `borg://` link (there is no single-instance handoff yet)
 
 ## Credits
 

@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (c) 2026 Mark Toman and OpenQBORG contributors
+class_name PlayerTab
 extends Control
-## OpenQBORG Player: address bar, 3D view and the CYBERWORLD-style side
-## panel (emblem, nav map, page pane).
+## One tab of the OpenQBORG Player (see player_window.gd): address bar, 3D
+## view and the CYBERWORLD-style side panel (emblem, nav map, page pane).
+## The window shares its fetcher, page server and bookmarks between tabs; a
+## tab in the background is paused (processing, sound) until shown again.
 ##
 ## Tile triggers, as the original browser behaved:
 ##   gtw   stepping on it follows a link: another world, or a full-view page
@@ -15,19 +18,22 @@ extends Control
 const SIDE_WIDTH := 300
 const HOME_TEXT := "Enter a borg:// or borgs:// address, or a path to a .borg file."
 
-var fetcher := BorgFetcher.new()
-var pages := LocalPageServer.new()
+## The tab's title changed (world title or page title; "" when empty).
+signal title_changed(title: String)
+## A page asked for a new window (a popup the user clicked): open a tab.
+signal new_tab_requested(url: String)
+
+## Shared with the other tabs; set by the window before the tab is added.
+var fetcher: BorgFetcher
+var pages: LocalPageServer
 var music := BorgMusic.new()
 var scripts := ScriptHost.new()
-var bookmarks := Bookmarks.new()
 var world: BorgWorld
 var walker := BorgWalker.new()
 var current_url := ""
 var history: PackedStringArray = []
 
 var _address: LineEdit
-var _bookmark_menu: PopupMenu
-var _open_dialog: FileDialog
 var _back: Button
 var _status: Label
 var _viewport: SubViewport
@@ -50,39 +56,18 @@ var _backdrop_textures: Array[Texture2D] = []
 var _emblem_textures: Array[Texture2D] = []
 ## Live web surfaces by id (see WebSurface).
 var _surfaces := {}
+## Title shown on the tab and the window.
+var title := ""
 
 
 func _ready() -> void:
-	DisplayServer.window_set_min_size(Vector2i(800, 500))
-	add_child(fetcher)
-	add_child(pages)
-	pages.fetcher = fetcher
 	add_child(music)
 	music.status_changed.connect(func(t): _status.text = t)
-	HtmlView.ruffle_base = pages.ruffle_base()
-	HtmlView.swf_page = pages.swf_overlay_page
 	_build_ui()
 	add_child(scripts)
 	scripts.request.connect(_on_script_request)
-	var start := _startup_url()
-	if start.is_empty():
+	if current_url.is_empty():
 		_status.text = HOME_TEXT
-	else:
-		open_url(start)
-
-
-func _startup_url() -> String:
-	# After "--" anything goes: a world, a file, a web address.
-	for arg in OS.get_cmdline_user_args():
-		if not arg.begins_with("-"):
-			return arg
-	# Exported builds get their arguments directly (file associations, %u).
-	for arg in OS.get_cmdline_args():
-		var lower := arg.to_lower()
-		if lower.begins_with("borg") or lower.begins_with("http") or lower.begins_with("file://") \
-				or lower.ends_with(".borg"):
-			return arg
-	return ""
 
 
 # --- UI ----------------------------------------------------------------------
@@ -93,7 +78,6 @@ func _build_ui() -> void:
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.add_theme_constant_override("separation", 0)
 	add_child(root)
-	root.add_child(_build_menu())
 
 	var bar := HBoxContainer.new()
 	root.add_child(bar)
@@ -138,6 +122,8 @@ func _build_ui() -> void:
 	_view_container.gui_input.connect(_on_view_input)
 	left.add_child(_view_container)
 	_viewport = SubViewport.new()
+	# Each tab has its own 3D world; otherwise every tab's world would show in all.
+	_viewport.own_world_3d = true
 	_viewport.handle_input_locally = false
 	_view_container.add_child(_viewport)
 	_setup_scene()
@@ -294,8 +280,7 @@ func _load_world(url: String, push_history: bool, entry := -1) -> void:
 	_sync_surfaces()
 	_close_full_page()
 	_push_page_state()
-	var title: String = level.meta.get("Title", "")
-	DisplayServer.window_set_title("%s — OpenQBORG" % title if not title.is_empty() else "OpenQBORG")
+	_set_title(str(level.meta.get("Title", "")))
 	_status.text = "%s   (%s)" % [title, "Chromium pages" if HtmlView.cef_available() else "no page engine"]
 	_loading = false
 	_maybe_screenshot()
@@ -385,8 +370,7 @@ func _close_full_page() -> void:
 	_browser.visible = false
 	_view_container.visible = true
 	_address.text = BorgUrl.to_display(current_url)
-	var title: String = world.level.meta.get("Title", "")
-	DisplayServer.window_set_title("%s — OpenQBORG" % title if not title.is_empty() else "OpenQBORG")
+	_set_title(str(world.level.meta.get("Title", "")))
 	_update_nav_buttons()
 
 
@@ -429,6 +413,8 @@ func _on_page_request(msg: Dictionary) -> void:
 			_load_world(target, true)
 		"web":
 			_show_full_page(str(msg.url))
+		"newTab":
+			new_tab_requested.emit(pages.to_local(str(msg.url)))
 		"moveTile":
 			if world != null and _trusted_page(str(msg.get("origin", ""))):
 				world.move_tile(str(msg.layer), Vector2i(int(msg.fromX), int(msg.fromY)),
@@ -574,7 +560,7 @@ func _push_page_state() -> void:
 ## Dev hook: OPENQBORG_SCREENSHOT=out.png saves a frame after loading, then quits.
 func _maybe_screenshot() -> void:
 	var out := OS.get_environment("OPENQBORG_SCREENSHOT")
-	if out.is_empty():
+	if out.is_empty() or not visible: # only the tab in front
 		return
 	if _shot_started:
 		return
@@ -664,157 +650,44 @@ func _show_page_dialog(text: String) -> void:
 	d.popup_centered()
 
 
-# --- Menu bar ------------------------------------------------------------------
+# --- Used by the window's menus -----------------------------------------------
 
-enum MenuId { OPEN_FILE, OPEN_ADDRESS, RELOAD, BACK, QUIT, ADD_BOOKMARK, REMOVE_BOOKMARK,
-		CONTROLS, ABOUT, BOOKMARK_BASE = 1000 }
-
-
-func _build_menu() -> MenuBar:
-	var bar := MenuBar.new()
-	bar.prefer_global_menu = false
-	var file := PopupMenu.new()
-	file.name = "File"
-	file.add_item("Open File…", MenuId.OPEN_FILE)
-	file.set_item_accelerator(file.get_item_index(MenuId.OPEN_FILE), KEY_MASK_CTRL | KEY_O)
-	file.add_item("Open Address…", MenuId.OPEN_ADDRESS)
-	file.set_item_accelerator(file.get_item_index(MenuId.OPEN_ADDRESS), KEY_MASK_CTRL | KEY_L)
-	file.add_separator()
-	file.add_item("Reload", MenuId.RELOAD)
-	file.set_item_accelerator(file.get_item_index(MenuId.RELOAD), KEY_F5)
-	file.add_item("Back to Previous World", MenuId.BACK)
-	file.set_item_accelerator(file.get_item_index(MenuId.BACK), KEY_MASK_ALT | KEY_LEFT)
-	file.add_separator()
-	file.add_item("Quit", MenuId.QUIT)
-	file.set_item_accelerator(file.get_item_index(MenuId.QUIT), KEY_MASK_CTRL | KEY_Q)
-	file.id_pressed.connect(_on_menu)
-	bar.add_child(file)
-
-	_bookmark_menu = PopupMenu.new()
-	_bookmark_menu.name = "Bookmarks"
-	_bookmark_menu.id_pressed.connect(_on_menu)
-	_bookmark_menu.about_to_popup.connect(_refresh_bookmark_menu)
-	bar.add_child(_bookmark_menu)
-	bookmarks.load_or_seed()
-	bookmarks.changed.connect(_refresh_bookmark_menu)
-	_refresh_bookmark_menu()
-
-	var help := PopupMenu.new()
-	help.name = "Help"
-	help.add_item("Controls", MenuId.CONTROLS)
-	help.add_item("About OpenQBORG", MenuId.ABOUT)
-	help.id_pressed.connect(_on_menu)
-	bar.add_child(help)
-
-	_open_dialog = FileDialog.new()
-	_open_dialog.access = FileDialog.ACCESS_FILESYSTEM
-	_open_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
-	_open_dialog.use_native_dialog = true
-	_open_dialog.filters = PackedStringArray(["*.borg ; QBORG worlds"])
-	_open_dialog.file_selected.connect(func(p: String): open_url(p))
-	add_child(_open_dialog)
-	return bar
+func _set_title(t: String) -> void:
+	title = t
+	title_changed.emit(t)
 
 
-## Quit (menu, Ctrl+Q), saving anything not yet on disk first.
-func _quit() -> void:
-	bookmarks.flush()
-	get_tree().quit()
+func focus_address() -> void:
+	_address.grab_focus()
+	_address.select_all()
 
 
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		bookmarks.flush()
+func reload() -> void:
+	_on_reload()
 
 
-func _refresh_bookmark_menu() -> void:
-	var m := _bookmark_menu
-	m.clear(true)
-	var marked := bookmarks.index_of(current_url) >= 0
-	m.add_item("Bookmark This World", MenuId.ADD_BOOKMARK)
-	m.set_item_accelerator(0, KEY_MASK_CTRL | KEY_D)
-	m.set_item_disabled(0, current_url.is_empty() or marked)
-	m.add_item("Remove This Bookmark", MenuId.REMOVE_BOOKMARK)
-	m.set_item_disabled(1, not marked)
-	if not bookmarks.items.is_empty():
-		m.add_separator()
-	# Folders (the defaults) as submenus, then the user's own bookmarks.
-	for folder in bookmarks.folders():
-		if folder.is_empty():
-			continue
-		var sub := PopupMenu.new()
-		sub.id_pressed.connect(_on_menu)
-		_add_bookmark_items(sub, folder)
-		m.add_submenu_node_item(folder, sub)
-	_add_bookmark_items(m, "")
+func back() -> void:
+	_on_back()
 
 
-func _add_bookmark_items(m: PopupMenu, folder: String) -> void:
-	for i in bookmarks.items.size():
-		var b: Dictionary = bookmarks.items[i]
-		if b.folder == folder:
-			m.add_item(b.title, MenuId.BOOKMARK_BASE + i)
-			m.set_item_tooltip(m.get_item_count() - 1, BorgUrl.to_display(b.url))
+func set_status(text: String) -> void:
+	_status.text = text
 
 
-func _on_menu(id: int) -> void:
-	match id:
-		MenuId.OPEN_FILE:
-			_open_dialog.popup_centered_ratio(0.6)
-		MenuId.OPEN_ADDRESS:
-			_address.grab_focus()
-			_address.select_all()
-		MenuId.RELOAD:
-			_on_reload()
-		MenuId.BACK:
-			_on_back()
-		MenuId.QUIT:
-			_quit()
-		MenuId.ADD_BOOKMARK:
-			if _browser.visible and not _browser.url().is_empty():
-				var page := pages.to_local(_browser.url())
-				bookmarks.add(_browser.page_title(), page)
-				_status.text = "Bookmarked " + page
-			elif world != null:
-				bookmarks.add(world.level.meta.get("Title", ""), current_url)
-				_status.text = "Bookmarked " + BorgUrl.to_display(current_url)
-		MenuId.REMOVE_BOOKMARK:
-			bookmarks.remove(current_url)
-		MenuId.CONTROLS:
-			_show_page_dialog("Walk: ↑ ↓ or W S     Turn: ← →     Strafe: A D\nLook up/down: PgUp PgDn\n"
-					+ "Click a tile (or the nav map) to follow its link.")
-		MenuId.ABOUT:
-			_show_page_dialog("OpenQBORG Player\nAn open source player for CYBERWORLD QBORG worlds.\n\n"
-					+ "Free software under the GNU GPL v3 or later.\nhttps://github.com/kramlat/OpenQBORG\n\n"
-					+ "Page engine: %s\nExtra audio formats: %s" % [
-						"godot-cef (Chromium)" if HtmlView.cef_available() else "not installed",
-						"FFmpeg " + ClassDB.class_call_static("FFmpegAudioDecoder", "ffmpeg_version")
-								if BorgAudio.has_ffmpeg() else "not installed"])
-		_:
-			if id >= MenuId.BOOKMARK_BASE and id - MenuId.BOOKMARK_BASE < bookmarks.items.size():
-				open_url(bookmarks.items[id - MenuId.BOOKMARK_BASE].url)
+## What "Bookmark This" should save: the page showing, or the world.
+func bookmark_target() -> Dictionary:
+	if _browser.visible and not _browser.url().is_empty():
+		return {"title": _browser.page_title(), "url": pages.to_local(_browser.url())}
+	if world != null:
+		return {"title": str(world.level.meta.get("Title", "")), "url": current_url}
+	return {}
 
 
-func _shortcut_input(event: InputEvent) -> void:
-	if not (event is InputEventKey and event.pressed and not event.echo):
-		return
-	var k := event as InputEventKey
-	var id := -1
-	if k.ctrl_pressed and k.keycode == KEY_O:
-		id = MenuId.OPEN_FILE
-	elif k.ctrl_pressed and k.keycode == KEY_L:
-		id = MenuId.OPEN_ADDRESS
-	elif k.ctrl_pressed and k.keycode == KEY_D:
-		id = MenuId.ADD_BOOKMARK
-	elif k.ctrl_pressed and k.keycode == KEY_Q:
-		id = MenuId.QUIT
-	elif k.keycode == KEY_F5:
-		id = MenuId.RELOAD
-	elif k.alt_pressed and k.keycode == KEY_LEFT:
-		id = MenuId.BACK
-	if id >= 0:
-		_on_menu(id)
-		get_viewport().set_input_as_handled()
+## Foreground or background. A background tab stops processing and falls
+## silent (music, world sounds, page audio) until it's shown again.
+func set_active(active: bool) -> void:
+	visible = active
+	process_mode = Node.PROCESS_MODE_INHERIT if active else Node.PROCESS_MODE_DISABLED
 
 
 # --- Built-in browser --------------------------------------------------------------
@@ -849,9 +722,9 @@ func _on_browser_address(url: String) -> void:
 	_update_nav_buttons()
 
 
-func _on_browser_title(title: String) -> void:
+func _on_browser_title(page_title: String) -> void:
 	if _browser.visible:
-		DisplayServer.window_set_title("%s — OpenQBORG" % title if not title.is_empty() else "OpenQBORG")
+		_set_title(page_title)
 
 
 ## Only the current world's own pages may change the world through

@@ -268,12 +268,16 @@ func _on_download_requested(info: Object) -> void:
 		page_request.emit({"type": "world", "url": url})
 
 
-func _on_popup_requested(url: String, _disposition: int, _user_gesture: bool) -> void:
+func _on_popup_requested(url: String, _disposition: int, user_gesture: bool) -> void:
 	if url.to_lower().begins_with("borg"):
 		page_request.emit({"type": "borg", "url": url, "base": current_url})
 	elif is_world_url(url):
 		page_request.emit({"type": "world", "url": url})
+	elif user_gesture:
+		# A link or button the user clicked asked for a new window: a new tab.
+		page_request.emit({"type": "newTab", "url": url})
 	else:
+		# Unrequested popups (window.open on load) stay in this view.
 		navigate(url)
 
 
