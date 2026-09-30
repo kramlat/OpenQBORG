@@ -16,6 +16,7 @@ func _init() -> void:
 	_test_sprite_roundtrip()
 	_test_sprite_behaviour()
 	_test_tile_values()
+	_test_wall_orientation()
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--audio="):
 			_test_audio_dir(arg.trim_prefix("--audio="))
@@ -31,6 +32,24 @@ func check(cond: bool, what: String) -> void:
 	if not cond:
 		failures += 1
 		printerr("FAIL: " + what)
+
+
+## Wall strips lie sideways with the floor at x = 0 (lettering on Zeta Quest 3D's
+## walls proves it): a mark near the right edge of a stored strip is near the
+## top of the wall, and one near its top edge is at the left of the wall.
+func _test_wall_orientation() -> void:
+	var img := Image.create(1024, 256, false, Image.FORMAT_RGB8)
+	img.fill(Color.BLACK)
+	img.fill_rect(Rect2i(230, 100, 26, 56), Color.RED) # top of the wall
+	img.fill_rect(Rect2i(100, 0, 50, 10), Color.GREEN) # left end of the wall
+	var w := BorgWorld.new()
+	w._wall_frames = BorgFrames.new()
+	w._wall_frames.images = [img]
+	w._wall_strips = [{"x": 0, "y": 0}]
+	var face := w.wall_strip_image(0)
+	check(face.get_pixel(128, 10).r > 0.5, "top of the stored strip's far right is the top of the wall")
+	check(face.get_pixel(5, 130).g > 0.5, "stored top edge is the wall's left end")
+	w.free()
 
 
 ## window.external.TileValue: sizes in quarter pixels, 1-based page coordinates.

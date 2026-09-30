@@ -287,7 +287,8 @@ func _load_surface_tiles(tag: String) -> Dictionary:
 
 
 ## Wall images are 1024 wide. Each strip is stored sideways: the image's X
-## axis runs down the wall from the top, its Y axis along the wall face.
+## axis runs up the wall from the floor, its Y axis along the wall face, so a
+## strip turned a quarter turn counter-clockwise stands upright.
 func _load_wall_strips() -> void:
 	_wall_strips.clear()
 	_wall_mat_cache.clear()
@@ -315,7 +316,7 @@ func _wall_material(index: int, height_px: int) -> Material:
 			var region := Rect2i(strip.x, strip.y, mini(height_px, img.get_width() - strip.x),
 					mini(WALL_STRIP_HEIGHT, img.get_height() - strip.y))
 			var face := img.get_region(region)
-			face.rotate_90(CLOCKWISE)
+			face.rotate_90(COUNTERCLOCKWISE)
 			textures.append(ImageTexture.create_from_image(face))
 		mat = unshaded_material(textures[0])
 		if _wall_frames.is_animated():
@@ -773,7 +774,7 @@ func wall_strip_image(index: int) -> Image:
 	if region.size.x <= 0 or region.size.y <= 0:
 		return null
 	var face := img.get_region(region)
-	face.rotate_90(CLOCKWISE)
+	face.rotate_90(COUNTERCLOCKWISE)
 	return face
 
 

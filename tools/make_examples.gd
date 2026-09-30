@@ -220,15 +220,15 @@ static func _waterfall_face(phase: float) -> Image:
 	return img
 
 
-## Stacks tiles (floor, 256x256 each) or faces (wall, rotated into 1024x256
-## strips) into one atlas image.
+## Stacks tiles (floor, 256x256 each) or faces (wall, turned a quarter turn
+## clockwise into 1024x256 strips: the floor at x = 0) into one atlas image.
 static func _stack(parts: Array, walls: bool) -> Image:
 	var img := Image.create(1024 if walls else TILE, 256 * parts.size(), false, Image.FORMAT_RGB8)
 	for i in parts.size():
 		var part: Image = parts[i]
 		if walls:
 			part = part.duplicate()
-			part.rotate_90(COUNTERCLOCKWISE)
+			part.rotate_90(CLOCKWISE)
 		img.blit_rect(part, Rect2i(Vector2i.ZERO, part.get_size()), Vector2i(0, i * 256))
 	return img
 

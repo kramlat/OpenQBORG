@@ -204,7 +204,7 @@ func wall_thumb(index: int) -> Texture2D:
 		var tex: Texture2D = null
 		if img != null:
 			var strip := img.get_region(Rect2i(0, index * 256, 256, 256))
-			strip.rotate_90(CLOCKWISE)
+			strip.rotate_90(COUNTERCLOCKWISE)
 			tex = _fit(strip)
 		_thumbs[key] = tex
 	return _thumbs[key]

@@ -77,7 +77,10 @@ stream walks up each column, starting at the left.
 * `<flr>`, `<cei>`, `<wal>`: `<cfil HREF="image">offsets</cfil>`. Offsets are
   pixel offsets (`y * width + x`) of each tile. Floor and ceiling images are
   256 pixels wide stacks of 256×256 tiles. Wall images are 1024 wide, and each
-  strip is stored sideways: the image's X axis runs down the wall.
+  strip is stored sideways: the image's X axis runs up the wall from the
+  floor, its Y axis along the wall, so turning a strip a quarter turn
+  counter-clockwise stands it upright. (Confirmed by lettering on the walls
+  of Zeta Quest 3D; every surviving world stores its walls as JPEG.)
 * Any of these images may be **animated**. The original browser played
   animated GIFs; OpenQBORG also plays APNG and Motion JPEG (raw, AVI, MOV,
   multipart). Each frame is a whole image, so every tile or strip taken from it
