@@ -15,6 +15,7 @@ func _init() -> void:
 	_test_empty_roundtrip()
 	_test_sprite_roundtrip()
 	_test_sprite_behaviour()
+	_test_tile_values()
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--audio="):
 			_test_audio_dir(arg.trim_prefix("--audio="))
@@ -30,6 +31,37 @@ func check(cond: bool, what: String) -> void:
 	if not cond:
 		failures += 1
 		printerr("FAIL: " + what)
+
+
+## window.external.TileValue: sizes in quarter pixels, 1-based page coordinates.
+func _test_tile_values() -> void:
+	var lvl := BorgLevel.parse(BorgLevel.new().serialize())
+	var w := BorgWorld.new()
+	w.level = lvl
+	var spr := CWSprite.new()
+	spr.world_width = 192
+	spr.world_height = 176
+	w._sprites = [spr]
+	lvl.set_cell("obj", 8, 8, 1)
+	lvl.set_cell("gtw", 1, 1, 1)
+	var i := str(8 * lvl.width + 8)
+	check(w.page_state().spr[i] == [0, 0, 48, 44], "sprite size reads as px / 4")
+	w.set_tile_value("SPRITE", 9, 9, 3, 16)
+	check(w.page_state().spr[i][2] == 16 and w.page_state().spr[i][3] == 15, "width scales proportionally")
+	w.set_tile_value("SPRITE", 9, 9, 0, 22)
+	check(w.page_state().spr[i][2] == 24, "height sets width too")
+	w.set_tile_value("Sprite", 9, 9, 1, true)
+	check(w.page_state().spr[i][0] == 1, "hidden")
+	check(w.page_state().click[str(1 * lvl.width + 1)] == 0x11, "links default to click and walk")
+	w.set_tile_value("CLICK", 2, 2, 0, 0x1)
+	check(w.link_activates(Vector2i(1, 1), BorgWorld.LINK_CLICK) and not w.link_activates(Vector2i(1, 1), BorgWorld.LINK_WALK), "click only")
+	w.set_tile_value("ENTRY", 2, 2, 0, 0x5A)
+	check(w.link_entry.get(Vector2i(1, 1)) == 0x5A, "entry set")
+	w.set_tile_value("ENTRY", 2, 2, 0, null)
+	check(not w.link_entry.has(Vector2i(1, 1)), "entry reset")
+	check(w.set_tile_value("WALL", 3, 3, 0, 70) and lvl.get_cell("hgt", 2, 2) == 70, "wall height")
+	check(not w.set_tile_value("WALL", 17, 1, 0, 70), "outside the map is ignored")
+	w.free()
 
 
 func _test_rle() -> void:

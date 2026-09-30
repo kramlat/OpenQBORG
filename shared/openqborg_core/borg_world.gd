@@ -526,16 +526,19 @@ func _build_wall_sprite(sprite: CWSprite, x: int, y: int) -> void:
 
 
 func _register_animation(s: Sprite3D, sprite: CWSprite, tile: Vector2i) -> void:
-	_sprite_nodes.append({"node": s, "sprite": sprite, "tile": tile})
+	_sprite_nodes.append({"node": s, "sprite": sprite, "tile": tile, "pixel_size": s.pixel_size,
+			"base_y": s.position.y, "half_h": s.pixel_size * sprite.cell_height / 2.0})
+	_apply_sprite_state(_sprite_nodes.back())
 	if sprite.version >= 3 and not (sprite.multi_sided and sprite.sides > 1):
 		var b := SpriteBehaviour.new(s, sprite, tile)
 		_behaviours.append(b)
 		_sprite_nodes.back()["behaviour"] = b
 		return
-	if sprite.animate_on_load and sprite.frame_count > 1:
-		_animated.append({"node": s, "sprite": sprite, "time": 0.0, "frame": 0})
-	elif sprite.multi_sided and sprite.sides > 1:
-		_animated.append({"node": s, "sprite": sprite, "time": 0.0, "frame": -1})
+	if sprite.multi_sided and sprite.sides > 1:
+		_animated.append({"node": s, "sprite": sprite, "time": 0.0, "frame": -1, "tile": tile})
+	elif sprite.frame_count > 1:
+		# Registered even when it doesn't animate on load: a page may start it.
+		_animated.append({"node": s, "sprite": sprite, "time": 0.0, "frame": 0, "tile": tile})
 
 
 func _build_sounds() -> void:
@@ -569,6 +572,8 @@ func _process(delta: float) -> void:
 		var sprite: CWSprite = a.sprite
 		var s: Sprite3D = a.node
 		if a.frame >= 0:
+			if not sprite_state.get(a.tile, {}).get("animating", sprite.animate_on_load):
+				continue
 			a.time += delta * 1000.0
 			var dur := maxi(1, sprite.frame_durations[a.frame % sprite.frame_durations.size()])
 			while a.time > dur:
@@ -607,8 +612,139 @@ func move_tile(script_layer: String, from: Vector2i, to: Vector2i, keep_original
 	if not keep_original:
 		var empty := BorgLevel.EMPTY_SURFACE if layer in BorgLevel.SURFACE_LAYERS else 0
 		level.set_cell(layer, from.x, from.y, empty)
+	# A sprite's or link's page state (TileValue) goes with it.
+	var states: Array = [sprite_state] if layer == "obj" else ([link_flags, link_entry] if layer == "gtw" else [])
+	for d: Dictionary in states:
+		if d.has(from):
+			d[to] = d[from].duplicate() if d[from] is Dictionary else d[from]
+		else:
+			d.erase(to)
+		if not keep_original:
+			d.erase(from)
 	rebuild()
 	return true
+
+
+# --- Page tile values (window.external.TileValue) -------------------------------
+# CYBERWORLD pages read and set per-tile values through
+# TileValue(layer, x, y, option[, value]) (1-based x/y from the top-left):
+#   WALL 0     wall height (the hgt value)
+#   SPRITE 0   sprite height, 3 width (px / 4, like hgt; scales proportionally)
+#   SPRITE 1   hidden, 2 animating
+#   CLICK 0    link activation: 0x1 on click, 0x10 on walking onto it
+#   ENTRY 0    where a world link puts you in the next world (no value: reset)
+
+## Sizes and heights in page values are quarter pixels, like the hgt layer.
+const PAGE_UNIT := 4.0
+const LINK_CLICK := 0x1
+const LINK_WALK := 0x10
+
+## Vector2i -> {hidden, animating, width} as pages set them (kept across rebuilds).
+var sprite_state := {}
+## Vector2i -> CLICK flags for link tiles; missing means click and walk.
+var link_flags := {}
+## Vector2i -> ENTRY value: ((16 - y) << 4) + (x - 1) in the next (16x16) world.
+var link_entry := {}
+
+
+## Applies TileValue(layer, x, y, option, value). Returns true when the
+## geometry needs a rebuild (wall heights); sprite changes apply directly.
+func set_tile_value(layer: String, x: int, y: int, option: int, value: Variant) -> bool:
+	var t := Vector2i(x - 1, y - 1)
+	if not in_bounds(t):
+		return false
+	match layer.to_upper():
+		"WALL":
+			if option == 0 and value != null:
+				level.set_cell("hgt", t.x, t.y, clampi(int(value), 0, 4095))
+				return true
+		"SPRITE":
+			var sprite := _sprite_at(t)
+			if sprite == null or value == null:
+				return false
+			var st: Dictionary = sprite_state.get(t, {})
+			match option:
+				0: # height: keep proportions
+					st.width = maxf(1.0, float(value) * sprite.world_width / maxf(1.0, sprite.world_height))
+				1:
+					st.hidden = _truthy(value)
+				2:
+					st.animating = _truthy(value)
+				3:
+					st.width = maxf(1.0, float(value))
+			sprite_state[t] = st
+			for e in _sprite_nodes:
+				if e.tile == t:
+					_apply_sprite_state(e)
+		"CLICK":
+			if option == 0 and value != null:
+				link_flags[t] = int(value) & 0xFF
+		"ENTRY":
+			if value == null:
+				link_entry.erase(t)
+			else:
+				link_entry[t] = int(value)
+	return false
+
+
+## What pages can read back, for the page-side mirror that answers
+## TileValue() synchronously: sparse, keyed by y * width + x.
+func page_state() -> Dictionary:
+	var hgt := {}
+	var spr := {}
+	var click := {}
+	for y in level.height:
+		for x in level.width:
+			var i := str(y * level.width + x)
+			var t := Vector2i(x, y)
+			var h := level.get_cell("hgt", x, y)
+			if h != 0:
+				hgt[i] = h
+			var sprite := _sprite_at(t)
+			if sprite != null:
+				var st: Dictionary = sprite_state.get(t, {})
+				var w: float = st.get("width", sprite.world_width / PAGE_UNIT)
+				spr[i] = [int(st.get("hidden", false)), int(st.get("animating", _animates_by_default(sprite))),
+						roundi(w), roundi(w * sprite.world_height / maxf(1.0, sprite.world_width))]
+			if level.get_cell("gtw", x, y) > 0:
+				click[i] = link_flags.get(t, LINK_CLICK | LINK_WALK)
+	return {"w": level.width, "h": level.height, "hgt": hgt, "spr": spr, "click": click,
+			"mfg": hex_or_zero(level.gen_attrs.get("APP", "0"))}
+
+
+static func hex_or_zero(s: String) -> int:
+	return BorgLevel.hex_to_int(s) if s.is_valid_hex_number() else 0
+
+
+static func _truthy(v: Variant) -> bool:
+	return bool(v) if v is bool else float(v) != 0.0
+
+
+static func _animates_by_default(sprite: CWSprite) -> bool:
+	return sprite.frame_count > 1 and (sprite.animate_on_load or sprite.version >= 3)
+
+
+func _sprite_at(t: Vector2i) -> CWSprite:
+	var v := level.get_cell("obj", t.x, t.y)
+	return _sprites[v - 1] if v > 0 and v <= _sprites.size() else null
+
+
+func link_activates(t: Vector2i, how: int) -> bool:
+	return int(link_flags.get(t, LINK_CLICK | LINK_WALK)) & how != 0
+
+
+## Visibility, size and play state from sprite_state, on one placed node.
+func _apply_sprite_state(e: Dictionary) -> void:
+	var st: Dictionary = sprite_state.get(e.tile, {})
+	var s: Sprite3D = e.node
+	var sprite: CWSprite = e.sprite
+	s.visible = not st.get("hidden", false)
+	var k: float = 1.0
+	if st.has("width"):
+		k = float(st.width) * PAGE_UNIT / maxf(1.0, sprite.world_width)
+	s.pixel_size = e.pixel_size * k
+	# Grow from the sprite's base, not its middle.
+	s.position.y = e.base_y + (k - 1.0) * e.half_h
 
 
 # --- Previews (editor palettes) --------------------------------------------------
@@ -722,7 +858,8 @@ func _update_behaviours(delta: float) -> void:
 			var v := viewer.global_position
 			var dist := Vector2(v.x - (b.tile.x + 0.5), v.z - (b.tile.y + 0.5)).length()
 			b.set_near(dist * BorgLevel.TILE_PX <= b.sprite.proximity_distance)
-		b.tick(delta * 1000.0)
+		if sprite_state.get(b.tile, {}).get("animating", true):
+			b.tick(delta * 1000.0)
 
 
 # --- Web surfaces -------------------------------------------------------------------

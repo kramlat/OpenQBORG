@@ -26,20 +26,24 @@ static var ruffle_base := ""
 static var swf_page := Callable()
 
 var current_url := ""
-var borg_location := ""
 var title := ""
 var _cef: Control
 var _audio: AudioStreamPlayer
 var _fallback_label: Label
 var _fallback_button: Button
 var _retries := 0
+var _state_json := ""
 ## Ruffle views drawn over Flash the page couldn't play itself: [{src, cef, audio}].
 var _overlays: Array[Dictionary] = []
 
 
-## The bridge script, told where Ruffle is (for Flash in pages).
-static func preload_source() -> String:
-	return "window.__OQB_RUFFLE = %s;\n" % JSON.stringify(ruffle_base) + FileAccess.get_file_as_string(BRIDGE_SCRIPT)
+## The bridge script, told where Ruffle is (for Flash in pages) and, when a
+## world is loaded, its state for window.external (see set_world_state).
+static func preload_source(state_json := "") -> String:
+	var head := "window.__OQB_RUFFLE = %s;\n" % JSON.stringify(ruffle_base)
+	if not state_json.is_empty():
+		head += "window.__OQB_STATE = %s;\n" % state_json
+	return head + FileAccess.get_file_as_string(BRIDGE_SCRIPT)
 
 
 static func cef_available() -> bool:
@@ -147,9 +151,24 @@ func _on_load_finished(url: String, status: int) -> void:
 	if status == 429 or status == 503:
 		_retry(url)
 		return
-	if not borg_location.is_empty():
-		_cef.call("eval", "window.external && (window.external.BorgLocation = %s);" % JSON.stringify(borg_location))
+	_send_state()
 
+
+
+## The world state pages read back through window.external (TileValue,
+## userToPoint, BorgLocation): baked into the preload script, so it's there
+## before a page's own scripts run, and pushed live to the page showing.
+func set_world_state(json: String) -> void:
+	if json == _state_json or _cef == null:
+		return
+	_state_json = json
+	_cef.set("preload_script", preload_source(json))
+	_send_state()
+
+
+func _send_state() -> void:
+	if _cef != null and not _state_json.is_empty():
+		_cef.call("eval", "window.__oqbState && window.__oqbState(%s);" % _state_json)
 
 
 # --- Flash overlays -----------------------------------------------------------

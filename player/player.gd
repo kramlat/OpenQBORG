@@ -244,7 +244,9 @@ func go_back() -> void:
 		_load_world(prev, false)
 
 
-func _load_world(url: String, push_history: bool) -> void:
+## `entry` (from a page's TileValue ENTRY on the link) overrides the start:
+## ((16 - y) << 4) + (x - 1), for 1-based x/y in a classic 16x16 world.
+func _load_world(url: String, push_history: bool, entry := -1) -> void:
 	if _loading:
 		return
 	_loading_url = url
@@ -275,19 +277,23 @@ func _load_world(url: String, push_history: bool) -> void:
 		world.queue_free()
 	world = next
 	world.geometry_rebuilt.connect(_sync_surfaces)
+	world.geometry_rebuilt.connect(_push_page_state)
 	world.viewer = walker.camera
 	_viewport.add_child(world)
 	current_url = url
-	_side_page.borg_location = url
-	_browser.html.borg_location = url
 	_browser.set_world_available(true)
 	_apply_level_look()
 	walker.walk_speed = maxf(1.0, level.speed() / 150.0 * 4.0)
 	walker.place(level.start_tile_position(), level.start_eye_height_px() * BorgWorld.PX, level.start_yaw())
+	if entry >= 0:
+		var at := Vector2((entry & 15) + 0.5, level.height - 1 - (entry >> 4) + 0.5)
+		if level.in_bounds(int(at.x), int(at.y)):
+			walker.place(at, level.start_eye_height_px() * BorgWorld.PX, level.start_yaw())
 	_last_tile = Vector2i(-1, -1)
 	scripts.start(world, _player_state())
 	_sync_surfaces()
 	_close_full_page()
+	_push_page_state()
 	var title: String = level.meta.get("Title", "")
 	DisplayServer.window_set_title("%s — OpenQBORG" % title if not title.is_empty() else "OpenQBORG")
 	_status.text = "%s   (%s)" % [title, "Chromium pages" if HtmlView.cef_available() else "no page engine"]
@@ -384,7 +390,9 @@ func _close_full_page() -> void:
 	_update_nav_buttons()
 
 
-func _follow_gtw(index: int) -> void:
+## `tile` is the link's tile, for an entry point a page set on it (TileValue ENTRY).
+func _follow_gtw(index: int, tile := Vector2i(-1, -1)) -> void:
+	var entry: int = world.link_entry.get(tile, -1)
 	var links := world.level.ext_files("gtw")
 	if index < 1 or index > links.size():
 		return
@@ -392,7 +400,7 @@ func _follow_gtw(index: int) -> void:
 	if link.url.is_empty():
 		return
 	if link.url.to_lower().ends_with(".borg"):
-		_load_world(link.url, true)
+		_load_world(link.url, true, entry)
 	else:
 		_show_full_page(link.url)
 
@@ -429,7 +437,20 @@ func _on_page_request(msg: Dictionary) -> void:
 				if world.level.layers.has(layer):
 					scripts.sync_layer(layer, world.level.layers[layer])
 		"tileValue":
-			pass # TODO: sprite height scaling (option 0/3) once a world needs it
+			if world != null and _trusted_page(str(msg.get("origin", ""))):
+				var layer := str(msg.layer)
+				if world.set_tile_value(layer, int(msg.x), int(msg.y), int(msg.option), msg.get("value")):
+					world.rebuild()
+					scripts.sync_layer("hgt", world.level.layers["hgt"])
+				_push_page_state()
+		"userToPoint":
+			if world != null and _trusted_page(str(msg.get("origin", ""))):
+				# <pos> units: 64 per tile, y from the bottom, eye in quarter pixels;
+				# the rotation is in degrees on <pos>'s compass.
+				var lvl := world.level
+				var at := Vector2(clampf(float(msg.x) / BorgLevel.POS_PER_TILE, 0.0, lvl.width),
+						clampf(lvl.height - float(msg.y) / BorgLevel.POS_PER_TILE, 0.0, lvl.height))
+				walker.place(at, float(msg.height) * 4.0 * BorgWorld.PX, deg_to_rad(270.0 - float(msg.rotation)))
 		"dialog":
 			_show_page_dialog(str(msg.get("text", "")))
 
@@ -461,14 +482,15 @@ func _process(_delta: float) -> void:
 		return
 	var prev := _last_tile
 	_last_tile = tile
+	_push_page_state()
 	var lvl := world.level
 	if scripts.is_running():
 		if world.in_bounds(prev):
 			scripts.send_event("leave", prev, lvl.get_cell("js", prev.x, prev.y), _player_state())
 		scripts.send_event("enter", tile, lvl.get_cell("js", tile.x, tile.y), _player_state())
 	var gtw := lvl.get_cell("gtw", tile.x, tile.y)
-	if gtw > 0 and gtw != lvl.get_cell("gtw", prev.x, prev.y):
-		_follow_gtw(gtw)
+	if gtw > 0 and gtw != lvl.get_cell("gtw", prev.x, prev.y) and world.link_activates(tile, BorgWorld.LINK_WALK):
+		_follow_gtw(gtw, tile)
 	var gtw2 := lvl.get_cell("gtw2", tile.x, tile.y)
 	if gtw2 != lvl.get_cell("gtw2", prev.x, prev.y) or prev.x < 0:
 		_show_gtw2(gtw2)
@@ -527,9 +549,26 @@ func _activate_tile(tile: Vector2i) -> void:
 	var gtw := world.level.get_cell("gtw", tile.x, tile.y)
 	var gtw2 := world.level.get_cell("gtw2", tile.x, tile.y)
 	if gtw > 0:
-		_follow_gtw(gtw)
+		if world.link_activates(tile, BorgWorld.LINK_CLICK):
+			_follow_gtw(gtw, tile)
 	elif gtw2 > 0:
 		_show_gtw2(gtw2)
+
+
+## Sends pages the world state they read back through window.external
+## (TileValue, userToPoint, BorgLocation). Unchanged state isn't resent.
+func _push_page_state() -> void:
+	if world == null:
+		return
+	var st := world.page_state()
+	st.loc = current_url
+	st.pos = [roundi(walker.position.x * BorgLevel.POS_PER_TILE),
+			roundi((world.level.height - walker.position.z) * BorgLevel.POS_PER_TILE),
+			roundi(walker.camera.position.y / BorgWorld.PX / 4.0),
+			roundi(fposmod(270.0 - rad_to_deg(walker.yaw), 360.0))]
+	var json := JSON.stringify(st)
+	_side_page.set_world_state(json)
+	_browser.html.set_world_state(json)
 
 
 ## Dev hook: OPENQBORG_SCREENSHOT=out.png saves a frame after loading, then quits.

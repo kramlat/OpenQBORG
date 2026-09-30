@@ -145,10 +145,33 @@ Pages used `pushTo3D()`, which navigates to `borg://` + the page's own
 directory + a relative `.borg` path. For pages loaded from disk, that
 "host" is really a local path without its leading slash.
 
-Pages could also call the host object `window.external`: `GetVer()`,
-`MoveTile(layer, fromX, fromY, toX, toY, keepOriginal)` (1-based
-coordinates; layers `SPRITE`, `FLOOR`, `NOWALK`, `LINK2`, ...) and
-`tileValue(...)`.
+Pages could also call the host object `window.external` (IE matched its
+names case-insensitively, and pages use both spellings). Coordinates are
+1-based from the top-left.
+
+| Call | Does |
+|---|---|
+| `GetVer()` | Browser version |
+| `MoveTile(layer, fromX, fromY, toX, toY, keepOriginal)` | Move or copy a tile (layers `FLOOR`, `CEILING`, `WALL`, `SPRITE`, `NOWALK`, `LINK`, `LINK2`, `BORG`, `SOUND`, `MIDI`) |
+| `TileValue(layer, x, y, option[, value])` | Read a value, or set it when `value` is given; -1 for bad coordinates (table below) |
+| `UserToPoint(x, y, height, rotation, rotation, smooth)` | Move the viewer: `<pos>` units (64 per tile, y from the bottom, eye height in quarter pixels), rotation in degrees. With no arguments it returns `"x y height rotation"` |
+| `BorgLocation()` | Address of the current world |
+| `BrowserBrand()` | 0x0001 CYBERWORLD, 0x0020 Norstar Mall, 0x0040 Stan Lee Media, 0x0100 Pokémon |
+| `BorgMfgType()` | The world's `APP`: 1 Consumer, 2 Prosumer, 3 Professional, 4 Professional Demo |
+
+| `TileValue` layer, option | Value |
+|---|---|
+| `WALL`, 0 | Wall block height (the `hgt` value) |
+| `SPRITE`, 0 | Sprite height, in quarter pixels (setting it scales proportionally) |
+| `SPRITE`, 1 | Hidden (true hides) |
+| `SPRITE`, 2 | Animating (1 plays, 0 stops) |
+| `SPRITE`, 3 | Sprite width, in quarter pixels (scales proportionally, from its base) |
+| `CLICK`, 0 | How a link on the tile activates: bit 0x1 by clicking, 0x10 by walking onto it |
+| `ENTRY`, 0 | Where a world link on the tile puts you: `((16 - y) << 4) + (x - 1)` for a tile of the next (16×16) world; no value restores its own start |
+
+These come from CYBERWORLD's own scriptlet library (`commands.js`) and
+the worlds that use it; the CYBERWORLD Olympiad animates its fountains by
+setting `SPRITE` option 3 twenty times a second.
 
 # OpenQBORG extensions
 

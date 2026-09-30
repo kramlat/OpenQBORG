@@ -84,6 +84,9 @@ Layers use the `.borg` names: `wal`, `hgt`, `flr`, `cei`, `obj`, `gtw`,
 ## Classic page scripting still works
 
 Pages shown beside the world keep the original CYBERWORLD interfaces:
-`borg://` links, `pushTo3D()`/`pushTo2D()` and `window.external.MoveTile()`.
+`borg://` links, `pushTo3D()`/`pushTo2D()`, and `window.external` with
+`MoveTile()`, `TileValue()` (sprite size, visibility and animation, wall
+heights, link behaviour and entry points), `UserToPoint()` and the rest; see
+[FORMAT.md](FORMAT.md).
 Pages from local worlds are served from `http://127.0.0.1` so that cookies
 (which the Pokémon 2000 game uses for its save state) work.

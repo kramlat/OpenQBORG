@@ -222,23 +222,87 @@
   Object.defineProperty(window, "onbeforeunload", { get: function () { return null; }, set: function () {} });
 
   // --- window.external -----------------------------------------------------
+  // The player keeps `world` in step with the 3D view (window.__oqbState), so
+  // getters answer at once, as IE's host object did. Setters update it too,
+  // so read-then-toggle code works, and tell the player.
+  var world = window.__OQB_STATE || null;
+  window.__oqbState = function (s) { world = s; };
+  function cell(x, y) {
+    x = Number(x); y = Number(y);
+    if (!world || !(x >= 1 && y >= 1 && x <= world.w && y <= world.h)) return -1;
+    return String((Math.floor(y) - 1) * world.w + Math.floor(x) - 1);
+  }
+  function truthy(v) { return typeof v === "boolean" ? v : Number(v) !== 0; }
+  // TileValue(layer, x, y, option[, value]): see BorgWorld.set_tile_value.
+  function tileValue(layer, x, y, option, value) {
+    var L = String(layer).toUpperCase();
+    var i = cell(x, y);
+    option = Number(option) || 0;
+    var setting = arguments.length >= 5 && value !== undefined;
+    if (L === "ENTRY") {
+      // No value resets the link to the next world's own start.
+      send({ type: "tileValue", layer: L, x: x, y: y, option: option,
+             value: setting ? Number(value) : null });
+      return 0;
+    }
+    if (i === -1) return -1;
+    if (!setting) {
+      if (L === "WALL") return world.hgt[i] || 0;
+      if (L === "CLICK") return world.click[i] !== undefined ? world.click[i] : 0;
+      if (L === "SPRITE") {
+        var s = world.spr[i];
+        if (!s) return -1;
+        return option === 1 ? s[0] : option === 2 ? s[1] : option === 3 ? s[2] : s[3];
+      }
+      return 0;
+    }
+    if (L === "WALL") world.hgt[i] = Number(value) || 0;
+    else if (L === "CLICK") world.click[i] = Number(value) & 0xFF;
+    else if (L === "SPRITE" && world.spr[i]) {
+      var t = world.spr[i];
+      var ratio = t[2] ? t[3] / t[2] : 1;
+      if (option === 1) t[0] = truthy(value) ? 1 : 0;
+      else if (option === 2) t[1] = truthy(value) ? 1 : 0;
+      else if (option === 3) { t[2] = Math.round(Number(value)); t[3] = Math.round(t[2] * ratio); }
+      else if (option === 0) { t[3] = Math.round(Number(value)); t[2] = Math.round(t[3] / (ratio || 1)); }
+    }
+    send({ type: "tileValue", layer: L, x: x, y: y, option: option,
+           value: typeof value === "boolean" ? value : Number(value) });
+    return value;
+  }
+  // UserToPoint(x, y, height, rotation, rotation2, smooth) moves the viewer
+  // (<pos> units: 64 per tile, y from the bottom, eye height in quarter
+  // pixels, rotation in degrees); with no arguments it says where it is.
+  function userToPoint(x, y, height, rotation) {
+    if (arguments.length === 0) {
+      return world && world.pos ? world.pos.join(" ") : "";
+    }
+    send({ type: "userToPoint", x: Number(x) || 0, y: Number(y) || 0,
+           height: Number(height) || 0, rotation: Number(rotation) || 0 });
+  }
+  function borgLocation() { return world && world.loc ? world.loc : ""; }
+  // Pages read it both as BorgLocation() and as a plain string.
+  borgLocation.toString = borgLocation;
   var host = {
     GetVer: function () { return "5.3"; },
     MoveTile: function (layer, fromX, fromY, toX, toY, keepOriginal) {
       send({ type: "moveTile", layer: String(layer), fromX: fromX, fromY: fromY,
              toX: toX, toY: toY, keepOriginal: !!keepOriginal });
     },
-    tileValue: function (layer, x, y, option, value) {
-      send({ type: "tileValue", layer: String(layer), x: x, y: y, option: option,
-             value: value === undefined ? null : value });
-    }
+    TileValue: tileValue,
+    UserToPoint: userToPoint,
+    BorgLocation: borgLocation,
+    // 0x0001: the CYBERWORLD Browser brand.
+    BrowserBrand: function () { return 0x0001; },
+    // The .borg's APP attribute: 1 Consumer, 2 Prosumer, 3 Professional.
+    BorgMfgType: function () { return world ? world.mfg : 0; }
   };
-  host.moveTile = host.MoveTile;
-  host.getVer = host.GetVer;
+  // IE matched names case-insensitively; pages use both spellings.
+  ["GetVer", "MoveTile", "TileValue", "UserToPoint", "BorgLocation", "BrowserBrand", "BorgMfgType"]
+    .forEach(function (k) { host[k.charAt(0).toLowerCase() + k.slice(1)] = host[k]; });
   try {
     Object.defineProperty(window, "external", { value: host, configurable: true });
   } catch (err) {
     for (var k in host) { try { window.external[k] = host[k]; } catch (e2) {} }
   }
-  // BorgLocation is filled in by the player after each page load.
 })();
