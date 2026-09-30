@@ -9,14 +9,14 @@ extends Node
 const MAX_PARALLEL := 6
 ## Archives throttle hard (the Wayback Machine refuses connections when a
 ## client opens many at once), so be gentle with them.
-const HOST_LIMITS := {"web.archive.org": 2}
+const HOST_LIMITS := {"web.archive.org": 2, "archive.org": 2}
 const TIMEOUT_SEC := 30.0
 ## Refused connections, 429 and 5xx are retried this many times, backing off.
 const RETRIES := 4
 ## Archived snapshots never change, so they are kept on disk: revisiting an
 ## online world costs nothing, and a load cut short by throttling carries on
 ## where it stopped next time.
-const ARCHIVE_HOSTS := ["web.archive.org"]
+const ARCHIVE_HOSTS := ["web.archive.org", "archive.org"]
 const DISK_CACHE := "user://archive_cache"
 
 var last_error := ""
@@ -26,6 +26,9 @@ var _active_by_host := {}
 ## host -> Time.get_ticks_msec() before which nothing is sent to it (after a
 ## refusal or a 429, every request to that host waits, not just the one).
 var _host_resume := {}
+## URLs that failed for reasons worth another try later (refused, throttled,
+## server errors), not ones that don't exist. See retry_failed().
+var failed := {}
 
 
 func fetch(url: String) -> PackedByteArray:
@@ -43,7 +46,10 @@ func fetch(url: String) -> PackedByteArray:
 		if not disk.is_empty() and FileAccess.file_exists(disk):
 			data = FileAccess.get_file_as_bytes(disk)
 		else:
-			data = await _fetch_http(url)
+			var r := await _fetch_http(url)
+			data = r.body
+			if data.is_empty() and r.retry:
+				failed[url] = true
 			if not disk.is_empty() and not data.is_empty():
 				DirAccess.make_dir_recursive_absolute(DISK_CACHE)
 				var f := FileAccess.open(disk, FileAccess.WRITE)
@@ -51,6 +57,7 @@ func fetch(url: String) -> PackedByteArray:
 					f.store_buffer(data)
 	if not data.is_empty():
 		_cache[url] = data
+		failed.erase(url)
 	return data
 
 
@@ -60,6 +67,21 @@ func fetch_text(url: String) -> String:
 
 func clear_cache() -> void:
 	_cache.clear()
+
+
+## Tries the failed URLs again, one at a time (gentle on a throttling server).
+## Returns how many arrived; they are cached, so reloading picks them up.
+func retry_failed() -> int:
+	var got := 0
+	for url: String in failed.keys():
+		if not (await fetch(url)).is_empty():
+			got += 1
+	return got
+
+
+## True for addresses on hosts whose files never change (see ARCHIVE_HOSTS).
+static func is_archive(url: String) -> bool:
+	return _host_of(url) in ARCHIVE_HOSTS
 
 
 ## Where an archived URL is kept on disk ("" if it isn't an archive URL).
@@ -74,26 +96,27 @@ static func _host_of(url: String) -> String:
 	return url.get_slice("//", 1).get_slice("/", 0).get_slice(":", 0).to_lower()
 
 
-func _fetch_http(url: String) -> PackedByteArray:
+## {body, retry}: retry is true when giving up was only down to the server
+## being busy or unreachable, so the URL is worth trying again later.
+func _fetch_http(url: String) -> Dictionary:
 	var host := _host_of(url)
 	var limit: int = HOST_LIMITS.get(host, MAX_PARALLEL)
-	var body := PackedByteArray()
+	var r := {}
 	for attempt in RETRIES + 1:
 		while _active >= MAX_PARALLEL or _active_by_host.get(host, 0) >= limit \
 				or Time.get_ticks_msec() < _host_resume.get(host, 0):
 			await get_tree().process_frame
 		_active += 1
 		_active_by_host[host] = _active_by_host.get(host, 0) + 1
-		var r := await _request_once(url)
+		r = await _request_once(url)
 		_active -= 1
 		_active_by_host[host] -= 1
-		body = r.body
 		if not r.retry or attempt == RETRIES:
 			break
 		# 1, 2, 4, 8 s (or the server's Retry-After): give a throttling server room.
 		var wait_ms: int = r.wait_ms if r.wait_ms > 0 else int(1000 * pow(2.0, attempt))
 		_host_resume[host] = maxi(_host_resume.get(host, 0), Time.get_ticks_msec() + wait_ms)
-	return body
+	return r
 
 
 ## One request: {body, retry, wait_ms} (retry when it's worth trying again,

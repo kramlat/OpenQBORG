@@ -34,6 +34,13 @@ static func classify(input: String, context_url := "") -> Dictionary:
 
 ## Maps borg/borgs/bare input to an http(s):// or file:// URL.
 static func to_fetchable(input: String, context_url := "") -> String:
+	var url := _to_fetchable(input, context_url)
+	# Web addresses never hold raw spaces, but Godot decodes %20 in command-line
+	# arguments (and so in links opened from the desktop).
+	return url.replace(" ", "%20") if url.begins_with("http") else url
+
+
+static func _to_fetchable(input: String, context_url := "") -> String:
 	var s := input.strip_edges()
 	var lower := s.to_lower()
 	if lower.begins_with("borgs://"):

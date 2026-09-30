@@ -30,6 +30,10 @@ const ONLINE := [
 		["Olympiad: Gymnastics", "2002", "http://www.cyberworldcorp.com:80/Gallery/worlds/olympiad/cw_gymnastics.borg"],
 		["Olympiad: Swimming Pool", "2002", "http://www.cyberworldcorp.com:80/Gallery/worlds/olympiad/cw_swimming_pool.borg"],
 		["Olympiad: Track and Field", "2002", "http://www.cyberworldcorp.com:80/Gallery/worlds/olympiad/cw_trackandfield.borg"]]
+## Worlds kept whole in Internet Archive items (served from inside their ZIPs).
+const ARCHIVE_ITEMS := [
+		["Pokémon 2000 Adventure (Warner Bros., 2000)",
+			"borgs://archive.org/download/CyberworldAssets/p2kresurrected%20%2B%20fixed.zip/game/borgs/intro.borg"]]
 
 ## [{title, url, folder}] in menu order; folder "" is the top level.
 var items: Array[Dictionary] = []
@@ -78,6 +82,8 @@ static func defaults() -> Array[Dictionary]:
 						"key": "example:" + e[1]})
 	for o in ONLINE:
 		out.append({"title": o[0], "url": WAYBACK % [o[1], o[2]], "folder": ONLINE_FOLDER, "key": o[2]})
+	for a in ARCHIVE_ITEMS:
+		out.append({"title": a[0], "url": a[1], "folder": ONLINE_FOLDER, "key": a[1]})
 	return out
 
 

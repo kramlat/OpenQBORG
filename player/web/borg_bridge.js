@@ -69,7 +69,8 @@
   // and passes its address in __OQB_RUFFLE. Ruffle is only loaded once a
   // page actually contains Flash; its polyfill then replaces every
   // <object>/<embed> SWF, including ones added later by document.write().
-  var ruffleBase = window.__OQB_RUFFLE;
+  // Only on real pages: Chromium's own (error pages, viewers) forbid it anyway.
+  var ruffleBase = /^(https?|file):$/.test(location.protocol) ? window.__OQB_RUFFLE : "";
   var ruffleLoaded = false;
   var FLASH = 'embed[src$=".swf" i], embed[type="application/x-shockwave-flash" i],' +
       ' object[data$=".swf" i], object[type="application/x-shockwave-flash" i],' +

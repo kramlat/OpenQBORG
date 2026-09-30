@@ -56,6 +56,7 @@ func _ready() -> void:
 	DisplayServer.window_set_min_size(Vector2i(800, 500))
 	add_child(fetcher)
 	add_child(pages)
+	pages.fetcher = fetcher
 	add_child(music)
 	music.status_changed.connect(func(t): _status.text = t)
 	HtmlView.ruffle_base = pages.ruffle_base()
@@ -240,6 +241,7 @@ func _load_world(url: String, push_history: bool) -> void:
 		return
 	_loading_url = url
 	_loading = true
+	fetcher.failed.clear()
 	_status.text = "Loading " + BorgUrl.to_display(url) + " …"
 	_address.text = BorgUrl.to_display(url)
 	var bytes := await fetcher.fetch(url)
@@ -252,6 +254,9 @@ func _load_world(url: String, push_history: bool) -> void:
 	if BorgUrl.is_local(url):
 		# Pages sit beside the borgs/ folder (../html, ../images); serve the parent.
 		pages.allow_root(BorgUrl.local_path(BorgUrl.dir_of(url)).get_base_dir().get_base_dir())
+	elif BorgFetcher.is_archive(url):
+		# Archived pages are proxied too (see LocalPageServer), from the same folder.
+		pages.allow_remote_root(BorgUrl.dir_of(url).trim_suffix("/").get_base_dir())
 	var next := BorgWorld.new()
 	await next.build(level, url, fetcher)
 	if push_history and not current_url.is_empty() and current_url != url:
@@ -280,6 +285,34 @@ func _load_world(url: String, push_history: bool) -> void:
 	_status.text = "%s   (%s)" % [title, "Chromium pages" if HtmlView.cef_available() else "no page engine"]
 	_loading = false
 	_maybe_screenshot()
+	if not fetcher.failed.is_empty():
+		_heal_world(world, url)
+
+
+## Busy servers (archives above all) may refuse some files while a world
+## loads. Keep asking for them in the background, backing off, and patch the
+## world in place whenever some arrive: position and scripts are kept.
+func _heal_world(w: BorgWorld, url: String) -> void:
+	var delay := 10.0
+	for _i in 8:
+		_status.text = "%d file(s) didn't arrive; trying again in %d s" % [fetcher.failed.size(), delay]
+		await get_tree().create_timer(delay).timeout
+		if not is_instance_valid(w) or w != world or current_url != url:
+			return
+		var got := await fetcher.retry_failed()
+		if not is_instance_valid(w) or w != world or current_url != url:
+			return
+		if got > 0:
+			await w.load_assets()
+			if not is_instance_valid(w) or w != world:
+				return
+			w.rebuild()
+			_apply_level_look()
+		if fetcher.failed.is_empty():
+			_status.text = "All of the world's files have arrived."
+			return
+		delay = minf(delay * 2.0, 120.0)
+	_status.text = "%d file(s) are still unavailable; reload later to try again." % fetcher.failed.size()
 
 
 func _apply_level_look() -> void:
@@ -503,6 +536,10 @@ func _maybe_screenshot() -> void:
 	if not at.is_empty() and world != null:
 		var xy := at.split(",")
 		walker.place(Vector2(float(xy[0]), float(xy[1])), walker.camera.position.y, walker.yaw)
+	# OPENQBORG_SHOT_WAIT=seconds: wait longer first (e.g. for files to heal in).
+	var wait := OS.get_environment("OPENQBORG_SHOT_WAIT")
+	if wait.is_valid_float():
+		await get_tree().create_timer(wait.to_float()).timeout
 	for i in 240:
 		await get_tree().process_frame
 	if world == null:
@@ -511,6 +548,7 @@ func _maybe_screenshot() -> void:
 		get_tree().quit()
 		return
 	print("screenshot: walker=%s yaw=%.3f tile=%s" % [walker.position, walker.yaw, _last_tile])
+	print("screenshot: failed=%s" % [fetcher.failed.keys()])
 	print("screenshot: status=%s music=%s page=%s" % [_status.text, music.current, _side_page.current_url])
 	var sfx := world.find_children("*", "AudioStreamPlayer3D", true, false).map(func(p): return "%s:%s" % [p.stream.get_class(), p.playing])
 	print("screenshot: music_stream=%s sfx=%s" % [music.get_child(1).stream, sfx])

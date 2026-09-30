@@ -120,7 +120,14 @@ func build(p_level: BorgLevel, url: String, p_fetcher: BorgFetcher) -> void:
 	fetcher = p_fetcher
 	base_url = BorgUrl.dir_of(url)
 	ceiling_height = level.ceiling_height_px() * PX
+	await load_assets()
+	rebuild()
 
+
+## Loads (or, after missing files have arrived, reloads) every asset the
+## level names. Files already fetched come from the fetcher's cache. Call
+## rebuild() afterwards. Scripts are only loaded the first time.
+func load_assets() -> void:
 	nav_image = await _load_image(domains_url(level.ext_file("nav")))
 	emblem_frames = await _load_frames(domains_url(level.ext_file("emb")))
 	emblem_image = emblem_frames.first() if emblem_frames != null else null
@@ -140,9 +147,11 @@ func build(p_level: BorgLevel, url: String, p_fetcher: BorgFetcher) -> void:
 	_ceiling_tile_count = cei.count
 	_ceiling_frames = cei.frames
 	await _load_wall_strips()
+	_sprites.clear()
 	for href in level.ext_files("spr"):
 		var bytes := await fetcher.fetch(objects_url(href))
 		_sprites.append(CWSprite.decode(bytes, href) if not bytes.is_empty() else null)
+	sounds.clear()
 	for href in level.ext_files("wav"):
 		var stream := BorgAudio.decode(await fetcher.fetch(media_url(href)), href)
 		if stream == null:
@@ -150,11 +159,11 @@ func build(p_level: BorgLevel, url: String, p_fetcher: BorgFetcher) -> void:
 		else:
 			BorgAudio.set_looping(stream)
 		sounds.append(stream)
-	for href in level.ext_files("js"):
-		var source := await fetcher.fetch_text(scripts_url(href))
-		if not source.is_empty():
-			scripts.append({"name": href, "source": source})
-	rebuild()
+	if scripts.is_empty():
+		for href in level.ext_files("js"):
+			var source := await fetcher.fetch_text(scripts_url(href))
+			if not source.is_empty():
+				scripts.append({"name": href, "source": source})
 
 
 ## (Re)builds geometry from `level` without refetching any assets.
@@ -280,6 +289,9 @@ func _load_surface_tiles(tag: String) -> Dictionary:
 ## Wall images are 1024 wide. Each strip is stored sideways: the image's X
 ## axis runs down the wall from the top, its Y axis along the wall face.
 func _load_wall_strips() -> void:
+	_wall_strips.clear()
+	_wall_mat_cache.clear()
+	_wall_anims.clear()
 	var cfil := level.ext_cfil("wal")
 	if cfil.is_empty():
 		return

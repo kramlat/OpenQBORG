@@ -66,6 +66,7 @@ func _test_urls() -> void:
 	check(BorgUrl.classify("borg://cmd.prev").kind == BorgUrl.Kind.COMMAND_PREV, "cmd.prev")
 	var wb := "https://web.archive.org/web/2001id_/http://www2.warnerbros.com:80/zeta/borgs/"
 	check(BorgUrl.join(wb, "domains/../media/zeta.mid") == wb + "media/zeta.mid", "Wayback addresses keep their embedded http://")
+	check(BorgUrl.to_fetchable("borgs://h/a b %2B c/w.borg") == "https://h/a%20b%20%2B%20c/w.borg", "spaces from the command line are re-encoded")
 	check(BorgUrl.to_fetchable("borgs://web.archive.org/web/2001id_/http://h/a.borg") \
 			== "https://web.archive.org/web/2001id_/http://h/a.borg", "Wayback borgs:// -> https")
 
