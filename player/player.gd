@@ -60,6 +60,7 @@ func _ready() -> void:
 	add_child(music)
 	music.status_changed.connect(func(t): _status.text = t)
 	HtmlView.ruffle_base = pages.ruffle_base()
+	HtmlView.swf_page = pages.swf_overlay_page
 	_build_ui()
 	add_child(scripts)
 	scripts.request.connect(_on_script_request)
@@ -207,6 +208,13 @@ func open_url(input: String, context := "") -> void:
 		return
 	var c := BorgUrl.classify(input, context if not context.is_empty() else current_url)
 	c.url = pages.to_local(c.url)
+	# A local page the user opened (not one a page asked for) is served over
+	# loopback like world pages, so it behaves as it would on a web server:
+	# cookies, and Flash fetching its movie. Its parent folder is allowed too,
+	# for the usual ../images and ../flash links.
+	var local_page: String = str(c.url).get_slice("?", 0).to_lower()
+	if context.is_empty() and BorgUrl.is_local(c.url) and (local_page.ends_with(".html") or local_page.ends_with(".htm")):
+		pages.allow_root(BorgUrl.local_path(c.url).get_base_dir().get_base_dir())
 	match c.kind:
 		BorgUrl.Kind.COMMAND_PREV:
 			go_back()

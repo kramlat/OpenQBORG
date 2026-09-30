@@ -63,7 +63,11 @@ surviving worlds; see [docs/FORMAT.md](docs/FORMAT.md).
   world script. The editor places them with a Surfaces dialog.
 * **Flash** in world pages plays through [Ruffle](https://ruffle.rs), an open source
   Flash emulator in WebAssembly, sandboxed inside Chromium (`tools/fetch-assets.sh
-  ruffle`). It loads only on pages that contain Flash.
+  ruffle`). It loads only on pages that contain Flash. Where Ruffle can't
+  play a movie inside the page (the page's security policy blocks it, or it
+  fails to load), the player draws its own Ruffle view over that spot instead,
+  kept aligned as the page scrolls. Local pages you open directly are served
+  over loopback like world pages, so they behave as they would on a server.
 * **Animated GIF, APNG and Motion JPEG sprites**: frames, timing and
   transparency come from the file (an APNG can still carry CWS3 behaviours).
 * **Animated textures**: floor, ceiling and wall images, the backdrop and the

@@ -72,6 +72,7 @@
   // Only on real pages: Chromium's own (error pages, viewers) forbid it anyway.
   var ruffleBase = /^(https?|file):$/.test(location.protocol) ? window.__OQB_RUFFLE : "";
   var ruffleLoaded = false;
+  var ruffleFailed = false;
   var FLASH = 'embed[src$=".swf" i], embed[type="application/x-shockwave-flash" i],' +
       ' object[data$=".swf" i], object[type="application/x-shockwave-flash" i],' +
       ' object[classid*="D27CDB6E" i], param[name="movie" i][value$=".swf" i]';
@@ -85,6 +86,7 @@
       showSwfDownload: false, contextMenu: "rightClickOnly"
     }, window.RufflePlayer.config || {});
     var s = document.createElement("script");
+    s.onerror = function () { ruffleFailed = true; };
     s.src = ruffleBase + "ruffle.js";
     (document.head || document.documentElement).appendChild(s);
   }
@@ -97,6 +99,93 @@
     });
     watch.observe(document, { childList: true, subtree: true });
   }
+
+  // --- Flash overlays ---------------------------------------------------
+  // When Ruffle can't play a movie inside the page, the player draws Ruffle
+  // over the spot instead: report where each such movie is, and hide what
+  // Chromium or the failed Ruffle shows underneath. Decided by outcome, not by
+  // guesses: a movie is rescued when Ruffle never took it over (its script was
+  // blocked or didn't load), when Ruffle shows its error screen (the page's
+  // policy blocks it from running or fetching), or when it still hasn't loaded
+  // after 20 seconds.
+  var rescued = [];
+  var watching = false;
+  function watchLayout() {
+    if (watching) return;
+    watching = true;
+    var queued = false;
+    function queue() {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(function () { queued = false; reportFlash(); });
+    }
+    window.addEventListener("scroll", queue, true);
+    window.addEventListener("resize", queue);
+    new MutationObserver(queue).observe(document, { childList: true, subtree: true, attributes: true });
+    queue();
+  }
+  function swfOf(el) {
+    var src = el.getAttribute("src") || el.getAttribute("data") || "";
+    if (!src) {
+      var p = el.querySelector('param[name="movie" i], param[name="src" i]');
+      if (p) src = p.getAttribute("value") || "";
+    }
+    if (!src && /OBJECT$/.test(el.tagName)) {
+      var inner = el.querySelector("embed, ruffle-embed");
+      if (inner) return swfOf(inner);
+    }
+    try { return src ? new URL(src, document.baseURI).href : ""; } catch (e) { return ""; }
+  }
+  function isFlash(el) {
+    return el.matches(FLASH) || /\.swf($|[?#])/i.test(swfOf(el));
+  }
+  function ruffleFailedOn(el) {
+    var panic = el.shadowRoot && el.shadowRoot.querySelector("#panic");
+    return !!panic && getComputedStyle(panic).display !== "none";
+  }
+  function needsRescue(el, elapsed) {
+    if (/^RUFFLE-/.test(el.tagName)) {
+      return el.readyState !== 2 && (ruffleFailedOn(el) || elapsed >= 20000);
+    }
+    // A plain <embed>/<object>: Ruffle never took it over.
+    return isFlash(el) && (!ruffleBase || ruffleFailed || elapsed >= 5000);
+  }
+  function checkFlash(elapsed) {
+    document.querySelectorAll("embed, object, ruffle-embed, ruffle-object").forEach(function (el) {
+      // An <embed> inside an <object> is the same movie.
+      if (/EMBED$/.test(el.tagName) && el.parentElement && el.parentElement.closest("object, ruffle-object")) return;
+      if (rescued.indexOf(el) >= 0 || !needsRescue(el, elapsed)) return;
+      rescued.push(el);
+      if (typeof el.pause === "function") { try { el.pause(); } catch (e) {} }
+      watchLayout();
+    });
+    if (rescued.length) reportFlash();
+  }
+  var lastReport = "";
+  function reportFlash() {
+    var items = [];
+    rescued = rescued.filter(function (el) { return el.isConnected; });
+    rescued.forEach(function (el) {
+      var src = swfOf(el);
+      if (!src) return;
+      el.style.visibility = "hidden";
+      var r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return;
+      items.push({ src: src, x: r.left, y: r.top, w: r.width, h: r.height });
+    });
+    var json = JSON.stringify(items);
+    if (json === lastReport) return;
+    lastReport = json;
+    send({ type: "flashOverlay", items: items, vw: window.innerWidth, vh: window.innerHeight });
+  }
+  window.addEventListener("load", function () {
+    var start = Date.now();
+    (function tick() {
+      var elapsed = Date.now() - start;
+      checkFlash(elapsed);
+      if (elapsed < 21000) setTimeout(tick, 1000);
+    })();
+  });
 
   // --- Surface screens ---------------------------------------------------
   // Pages shown on web surfaces can talk to the world's script:

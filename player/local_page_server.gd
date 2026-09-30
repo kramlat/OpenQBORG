@@ -35,6 +35,9 @@ const RUFFLE_DIR := "__ruffle__"
 const OQB_DIR := "__oqb__"
 const OQB_PAGES := ["swf.html"]
 const REMOTE_DIR := "__remote__"
+const SWF_DIR := "__swf__"
+## SWFs registered for Flash overlays: id -> real address (see swf_overlay_page).
+var _swf := {}
 ## Fetches proxied files; set by the player.
 var fetcher: BorgFetcher
 ## Remote folders (URL prefixes ending in /) that may be proxied.
@@ -49,6 +52,28 @@ func set_inline_page(name: String, html: String, base_url: String) -> String:
 	var key := name.uri_encode() + ".html"
 	_inline[key] = "<base href=\"%s\">\n%s" % [to_served(base_url).xml_escape(true), html]
 	return helper_page("inline/" + key) + "?v=%d" % hash(html)
+
+
+## A Ruffle page (swf.html) playing `src`, for a Flash overlay drawn over the
+## page at `page_url`. The SWF is served from this origin, so the original
+## server's CORS rules don't matter. Local files only for local pages.
+func swf_overlay_page(src: String, page_url: String) -> String:
+	if not is_running():
+		return ""
+	var served := src
+	var local_page := page_url.begins_with(origin() + "/") or BorgUrl.is_local(page_url)
+	if src.begins_with(origin() + "/"):
+		pass
+	elif _is_remote_allowed(src):
+		served = to_served(src)
+	elif src.begins_with("http://") or src.begins_with("https://") or (BorgUrl.is_local(src) and local_page):
+		var id := src.sha256_text().substr(0, 20)
+		_swf[id] = src
+		var name := src.get_slice("?", 0).get_slice("#", 0).get_file()
+		served = origin() + "/" + SWF_DIR + "/" + id + "/" + (name.uri_encode() if not name.is_empty() else "movie.swf")
+	else:
+		return ""
+	return helper_page("swf.html") + "?src=" + served.uri_encode()
 
 
 ## Address of one of OpenQBORG's helper pages.
@@ -192,6 +217,14 @@ func _respond(peer: StreamPeerTCP, request_line: String) -> bool:
 		var data := FileAccess.get_file_as_bytes(res) if parts[0] == "GET" else PackedByteArray()
 		_send(peer, 200, MIME.get(file.get_extension().to_lower(), "application/octet-stream"), data, true)
 		return true
+	var swf_prefix := prefix + SWF_DIR + "/"
+	if target.begins_with(swf_prefix):
+		var id := target.substr(swf_prefix.length()).get_slice("/", 0)
+		if not _swf.has(id) or fetcher == null:
+			_send(peer, 404, "text/plain", "Not found".to_utf8_buffer())
+			return true
+		_proxy(peer, _swf[id], parts[0] == "HEAD")
+		return false
 	var remote_prefix := prefix + REMOTE_DIR + "/"
 	if target.begins_with(remote_prefix):
 		var rest := target.substr(remote_prefix.length())

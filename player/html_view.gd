@@ -21,6 +21,9 @@ const RETRY_ERRORS := [100, 101, 102, 7, 118, 324]
 const MAX_RETRIES := 3
 ## Where the player serves Ruffle; set before pages are created ("" = none).
 static var ruffle_base := ""
+## (swf_address, page_address) -> address of a Ruffle page that plays it, for
+## Flash overlays (see _layout_flash); set by the player.
+static var swf_page := Callable()
 
 var current_url := ""
 var borg_location := ""
@@ -30,6 +33,8 @@ var _audio: AudioStreamPlayer
 var _fallback_label: Label
 var _fallback_button: Button
 var _retries := 0
+## Ruffle views drawn over Flash the page couldn't play itself: [{src, cef, audio}].
+var _overlays: Array[Dictionary] = []
 
 
 ## The bridge script, told where Ruffle is (for Flash in pages).
@@ -50,6 +55,7 @@ func _ready() -> void:
 		_cef.set("url", "about:blank")
 		_cef.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_cef.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		_cef.clip_contents = true # Flash overlays scrolled partly out of view
 		add_child(_cef)
 		_cef.connect("ipc_message", _on_ipc_message)
 		_cef.connect("load_error", _on_load_error)
@@ -85,6 +91,7 @@ func navigate(url: String) -> void:
 		return
 	current_url = url
 	_retries = 0
+	_clear_flash()
 	if _cef != null:
 		_cef.set("url", url)
 	else:
@@ -129,6 +136,9 @@ static func is_world_url(url: String) -> bool:
 
 func _on_ipc_message(message: String) -> void:
 	var msg = JSON.parse_string(message)
+	if msg is Dictionary and msg.get("type") == "flashOverlay":
+		_layout_flash(msg)
+		return
 	if msg is Dictionary and msg.has("type"):
 		page_request.emit(msg)
 
@@ -139,6 +149,56 @@ func _on_load_finished(url: String, status: int) -> void:
 		return
 	if not borg_location.is_empty():
 		_cef.call("eval", "window.external && (window.external.BorgLocation = %s);" % JSON.stringify(borg_location))
+
+
+
+# --- Flash overlays -----------------------------------------------------------
+# When Ruffle can't run inside a page (a Content Security Policy, a failed load),
+# the bridge reports where each Flash element is and hides Chromium's "not
+# supported" box; a small Ruffle view of our own is drawn over each spot and
+# kept aligned as the page scrolls or resizes.
+
+func _layout_flash(msg: Dictionary) -> void:
+	var items: Array = msg.get("items", [])
+	var vw := float(msg.get("vw", 0))
+	var vh := float(msg.get("vh", 0))
+	if _cef == null or vw <= 0.0 or vh <= 0.0 or not swf_page.is_valid():
+		return
+	var scale := Vector2(_cef.size.x / vw, _cef.size.y / vh)
+	var origin := str(msg.get("origin", current_url))
+	while _overlays.size() > items.size():
+		(_overlays.pop_back().cef as Node).queue_free()
+	for i in items.size():
+		var it: Dictionary = items[i]
+		var src := str(it.get("src", ""))
+		var o: Dictionary
+		if i < _overlays.size():
+			o = _overlays[i]
+			if o.src != src:
+				o.src = src
+				o.cef.set("url", swf_page.call(src, origin))
+		else:
+			var page: String = swf_page.call(src, origin)
+			if page.is_empty():
+				break
+			var c: Control = ClassDB.instantiate("CefTexture")
+			c.set("background_color", Color.BLACK)
+			c.set("preload_script", preload_source())
+			c.set("url", page)
+			c.connect("console_message", func(level: int, message: String, source: String, line: int):
+				print_verbose("flash overlay console [%d] %s (%s:%d)" % [level, message, source.get_file(), line]))
+			_cef.add_child(c)
+			o = {"src": src, "cef": c, "audio": attach_audio(c, c)}
+			_overlays.append(o)
+		var oc: Control = o.cef
+		oc.position = Vector2(float(it.get("x", 0)), float(it.get("y", 0))) * scale
+		oc.size = Vector2(float(it.get("w", 0)), float(it.get("h", 0))) * scale
+
+
+func _clear_flash() -> void:
+	for o in _overlays:
+		(o.cef as Node).queue_free()
+	_overlays.clear()
 
 
 # Fallbacks for borg:// navigations the bridge script didn't catch.
@@ -162,6 +222,7 @@ func _retry(url: String) -> void:
 
 func _on_load_started(url: String) -> void:
 	print_verbose("HtmlView load_started: ", url)
+	_clear_flash()
 	if is_world_url(url) and not url.to_lower().begins_with("borg"):
 		_cef.call("stop_loading")
 		page_request.emit({"type": "world", "url": url})
@@ -220,6 +281,10 @@ static func push_audio(cef: Control, player: AudioStreamPlayer) -> void:
 
 func _process(_delta: float) -> void:
 	push_audio(_cef, _audio)
+	for o in _overlays:
+		push_audio(o.cef, o.audio)
+		if o.audio != null:
+			(o.audio as AudioStreamPlayer).volume_db = 0.0 if is_visible_in_tree() else -80.0
 	# A page covered by the 3D view (or hidden) shouldn't keep making noise.
 	if _audio != null:
 		_audio.volume_db = 0.0 if is_visible_in_tree() else -80.0
